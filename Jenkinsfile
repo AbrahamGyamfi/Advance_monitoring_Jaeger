@@ -187,7 +187,8 @@ pipeline {
                             -p 5001:5000 ${BACKEND_IMAGE}:${IMAGE_TAG}
                         
                         # Wait for backend to be ready
-                        sleep 5
+                            sleep 15
+                            docker logs test-backend-${BUILD_NUMBER} || true
                         
                         # Test health endpoint
                         curl -f http://localhost:5001/health || exit 1
