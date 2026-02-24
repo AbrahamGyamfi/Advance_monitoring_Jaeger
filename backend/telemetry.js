@@ -1,7 +1,7 @@
 const { diag, DiagConsoleLogger, DiagLogLevel } = require('@opentelemetry/api');
 const { getNodeAutoInstrumentations } = require('@opentelemetry/auto-instrumentations-node');
 const { OTLPTraceExporter } = require('@opentelemetry/exporter-trace-otlp-http');
-const { resourceFromAttributes } = require('@opentelemetry/resources');
+const { Resource } = require('@opentelemetry/resources');
 const { NodeSDK } = require('@opentelemetry/sdk-node');
 const { SemanticResourceAttributes } = require('@opentelemetry/semantic-conventions');
 
@@ -15,7 +15,7 @@ if (process.env.OTEL_DIAGNOSTIC_LOG_LEVEL === 'debug') {
 }
 
 const sdk = new NodeSDK({
-  resource: resourceFromAttributes({
+  resource: new Resource({
     [SemanticResourceAttributes.SERVICE_NAME]: SERVICE_NAME,
     [SemanticResourceAttributes.DEPLOYMENT_ENVIRONMENT]: process.env.NODE_ENV || 'production'
   }),
