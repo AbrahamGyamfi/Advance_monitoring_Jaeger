@@ -1,0 +1,29 @@
+# Node artifacts
+**/node_modules/
+**/coverage/
+**/build/
+**/test-results/
+npm-debug.log*
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Terraform artifacts
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/tfplan
+terraform/terraform.tfvars
+
+# Monitoring generated config
+monitoring/config/prometheus-configured.yml
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,54 @@
+# Docker Compose for Production Deployment on EC2
+
+services:
+  taskflow-backend:
+    image: ${REGISTRY_URL:?REGISTRY_URL is required}/taskflow-backend:${IMAGE_TAG:?IMAGE_TAG is required}
+    container_name: taskflow-backend-prod
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+      - OTEL_SERVICE_NAME=taskflow-backend
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://${MONITORING_HOST:?MONITORING_HOST is required}:4318
+    restart: always
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - taskflow-network
+
+  taskflow-frontend:
+    image: ${REGISTRY_URL:?REGISTRY_URL is required}/taskflow-frontend:${IMAGE_TAG:?IMAGE_TAG is required}
+    container_name: taskflow-frontend-prod
+    ports:
+      - "80:80"
+    depends_on:
+      - taskflow-backend
+    restart: always
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - taskflow-network
+
+networks:
+  taskflow-network:
+    driver: bridge
