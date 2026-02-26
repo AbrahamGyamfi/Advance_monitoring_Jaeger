@@ -1,26 +1,36 @@
 pipeline {
     agent any
     
+    triggers {
+        githubPush()
+    }
+    
     environment {
-        // AWS Configuration (from Jenkins credentials)
+        // AWS Configuration
         AWS_REGION = credentials('aws-region')
         AWS_ACCOUNT_ID = credentials('aws-account-id')
         APP_SERVER_IP = credentials('app-server-ip')
+        MONITORING_HOST = credentials('monitoring-host')
         ECR_REGISTRY = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
         AWS_CREDENTIALS_ID = 'aws-credentials'
         
+        // Application Configuration
+        APP_NAME = credentials('app-name')
+        NODE_VERSION = credentials('node-version')
+        APP_PORT = credentials('app-port')
+        INTEGRATION_TEST_PORT = credentials('integration-test-port')
+        HEALTH_CHECK_TIMEOUT = credentials('health-check-timeout')
+        HEALTH_CHECK_INTERVAL = credentials('health-check-interval')
+        EC2_USER = credentials('ec2-user')
+        
         // Docker images
-        BACKEND_IMAGE = "${ECR_REGISTRY}/taskflow-backend"
-        FRONTEND_IMAGE = "${ECR_REGISTRY}/taskflow-frontend"
+        BACKEND_IMAGE = "${ECR_REGISTRY}/${APP_NAME}-backend"
+        FRONTEND_IMAGE = "${ECR_REGISTRY}/${APP_NAME}-frontend"
         IMAGE_TAG = "${BUILD_NUMBER}"
         
         // EC2 Deployment Server
         EC2_CREDENTIALS_ID = 'app-server-ssh'
         EC2_HOST = "${APP_SERVER_IP}"
-        EC2_USER = 'ec2-user'
-        
-        // Application
-        APP_NAME = 'taskflow'
     }
     
     options {
@@ -101,7 +111,7 @@ pipeline {
                             dir('backend') {
                                 sh """
                                     # Run backend tests in Node container
-                                    docker run --rm -v \$(pwd):/app -w /app node:18-alpine sh -c '
+                                    docker run --rm -v \$(pwd):/app -w /app node:${NODE_VERSION}-alpine sh -c '
                                         npm ci
                                         npm test
                                     '
@@ -118,7 +128,7 @@ pipeline {
                             dir('frontend') {
                                 sh """
                                     # Run frontend tests in Node container
-                                    docker run --rm -v \$(pwd):/app -w /app node:18-alpine sh -c '
+                                    docker run --rm -v \$(pwd):/app -w /app node:${NODE_VERSION}-alpine sh -c '
                                         npm ci
                                         CI=true npm test -- --passWithNoTests
                                     '
@@ -139,7 +149,7 @@ pipeline {
                             dir('backend') {
                                 sh """
                                     # Run linting in Node container
-                                    docker run --rm -v \$(pwd):/app -w /app node:18-alpine sh -c '
+                                    docker run --rm -v \$(pwd):/app -w /app node:${NODE_VERSION}-alpine sh -c '
                                         npm ci
                                         npm run lint
                                     '
@@ -178,35 +188,66 @@ pipeline {
                     echo '🔗 Running integration tests...'
                     
                     // Start containers temporarily for testing
-                    sh """
-                        set -e
-                        trap 'docker rm -f test-backend-${BUILD_NUMBER} >/dev/null 2>&1 || true' EXIT
+                    sh '''
+                        set -euo pipefail
+
+                        CONTAINER_NAME="test-backend-${BUILD_NUMBER}"
+
+                        cleanup() {
+                            docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+                        }
+
+                        fail_with_logs() {
+                            echo "Backend container failed readiness checks."
+                            docker ps -a --filter "name=$CONTAINER_NAME" || true
+                            docker logs "$CONTAINER_NAME" || true
+                            exit 1
+                        }
+
+                        trap cleanup EXIT
+                        cleanup
 
                         # Start backend in background
-                        docker run -d --name test-backend-${BUILD_NUMBER} \
-                            -p 5001:5000 ${BACKEND_IMAGE}:${IMAGE_TAG}
-                        
-                        # Wait for backend to be ready
-                            sleep 15
-                            docker logs test-backend-${BUILD_NUMBER} || true
-                        
+                        docker run -d --name "$CONTAINER_NAME" -p ${INTEGRATION_TEST_PORT}:${APP_PORT} "${BACKEND_IMAGE}:${IMAGE_TAG}" >/dev/null
+
+                        # Calculate max iterations
+                        MAX_ITERATIONS=$((${HEALTH_CHECK_TIMEOUT} / ${HEALTH_CHECK_INTERVAL}))
+
+                        # Wait for backend to be ready and fail fast if it exits
+                        for i in $(seq 1 $MAX_ITERATIONS); do
+                            if curl -fsS http://localhost:${INTEGRATION_TEST_PORT}/health >/dev/null; then
+                                break
+                            fi
+
+                            status="$(docker inspect -f '{{.State.Status}}' "$CONTAINER_NAME" 2>/dev/null || echo missing)"
+                            if [ "$status" != "running" ]; then
+                                fail_with_logs
+                            fi
+
+                            if [ "$i" -eq $MAX_ITERATIONS ]; then
+                                fail_with_logs
+                            fi
+
+                            sleep ${HEALTH_CHECK_INTERVAL}
+                        done
+
                         # Test health endpoint
-                        curl -f http://localhost:5001/health || exit 1
-                        
+                        curl -fsS http://localhost:${INTEGRATION_TEST_PORT}/health
+
                         # Test GET tasks
-                        curl -f http://localhost:5001/api/tasks || exit 1
-                        
+                        curl -fsS http://localhost:${INTEGRATION_TEST_PORT}/api/tasks
+
                         # Test POST task
-                        curl -X POST http://localhost:5001/api/tasks \
+                        curl -fsS -X POST http://localhost:${INTEGRATION_TEST_PORT}/api/tasks \
                             -H 'Content-Type: application/json' \
-                            -d '{"title":"Test Task","description":"Created during integration test"}' || exit 1
-                        
+                            -d '{"title":"Test Task","description":"Created during integration test"}'
+
                         # Test GET tasks again (should have 1 task)
-                        TASKS=\$(curl -s http://localhost:5001/api/tasks)
-                        echo "Tasks: \$TASKS"
-                        
+                        TASKS="$(curl -fsS http://localhost:${INTEGRATION_TEST_PORT}/api/tasks)"
+                        echo "Tasks: $TASKS"
+
                         echo "✅ Integration tests passed!"
-                    """
+                    '''
                 }
             }
         }
@@ -226,11 +267,15 @@ pipeline {
                         // Push backend images
                         sh """
                             docker push ${BACKEND_IMAGE}:${IMAGE_TAG}
+                            docker tag ${BACKEND_IMAGE}:${IMAGE_TAG} ${BACKEND_IMAGE}:latest
+                            docker push ${BACKEND_IMAGE}:latest
                         """
                         
                         // Push frontend images
                         sh """
                             docker push ${FRONTEND_IMAGE}:${IMAGE_TAG}
+                            docker tag ${FRONTEND_IMAGE}:${IMAGE_TAG} ${FRONTEND_IMAGE}:latest
+                            docker push ${FRONTEND_IMAGE}:latest
                         """
                     }
                     
@@ -270,34 +315,50 @@ pipeline {
                         
                         // Deploy application
                         sh """
-                            ssh -o StrictHostKeyChecking=yes ${EC2_USER}@${EC2_HOST} '
+                            ssh -o StrictHostKeyChecking=yes ${EC2_USER}@${EC2_HOST} 'bash -s' << 'ENDSSH'
                                 cd ~/taskflow
                                 
+                                # Export environment variables
+                                export REGISTRY_URL="${ECR_REGISTRY}"
+                                export IMAGE_TAG="${IMAGE_TAG}"
+                                export MONITORING_HOST="${MONITORING_HOST}"
+                                export AWS_REGION="${AWS_REGION}"
+                                
                                 # Login to ECR
-                                aws ecr get-login-password --region ${AWS_REGION} | \
-                                docker login --username AWS --password-stdin ${ECR_REGISTRY}
+                                aws ecr get-login-password --region \$AWS_REGION | \
+                                docker login --username AWS --password-stdin \$REGISTRY_URL
                                 
                                 # Pull immutable build images
-                                docker pull ${BACKEND_IMAGE}:${IMAGE_TAG}
-                                docker pull ${FRONTEND_IMAGE}:${IMAGE_TAG}
-                                
-                                # Stop existing containers
-                                docker-compose down --remove-orphans || true
+                                docker pull \$REGISTRY_URL/taskflow-backend:\$IMAGE_TAG || exit 1
+                                docker pull \$REGISTRY_URL/taskflow-frontend:\$IMAGE_TAG || exit 1
                                 
                                 # Start new containers
-                                REGISTRY_URL=${ECR_REGISTRY} IMAGE_TAG=${IMAGE_TAG} docker-compose up -d
+                                docker-compose up -d --no-deps --build
                                 
-                                # Wait for services to be healthy
-                                sleep 10
+                                # Wait for backend health check
+                                MAX_ITERATIONS=$((${HEALTH_CHECK_TIMEOUT} / ${HEALTH_CHECK_INTERVAL}))
+                                for i in \$(seq 1 \$MAX_ITERATIONS); do
+                                    if curl -fsS http://localhost:${APP_PORT}/health >/dev/null 2>&1; then
+                                        echo "Backend is healthy"
+                                        break
+                                    fi
+                                    if [ "\$i" -eq \$MAX_ITERATIONS ]; then
+                                        echo "Health check timeout - rolling back"
+                                        docker-compose logs taskflow-backend
+                                        exit 1
+                                    fi
+                                    sleep ${HEALTH_CHECK_INTERVAL}
+                                done
                                 
-                                # Check container status
+                                # Stop old containers
+                                docker-compose down --remove-orphans || true
+                                
+                                # Verify final state
                                 docker-compose ps
+                                curl -f http://localhost:${APP_PORT}/health || exit 1
                                 
-                                # Verify application is running
-                                curl -f http://localhost:5000/health || exit 1
-                                
-                                echo "✅ Deployment successful!"
-                            '
+                                echo "Deployment successful!"
+ENDSSH
                         """
                     }
                 }
@@ -313,7 +374,7 @@ pipeline {
                         def healthStatus = sh(
                             script: """
                                 ssh -o StrictHostKeyChecking=yes ${EC2_USER}@${EC2_HOST} '
-                                    curl -s http://localhost:5000/health | grep -i healthy
+                                    curl -s http://localhost:${APP_PORT}/health | grep -i healthy
                                 '
                             """,
                             returnStatus: true
@@ -334,27 +395,42 @@ pipeline {
         always {
             script {
                 echo '🧹 Cleaning up...'
-                // Clean up Docker images on Jenkins server
+                // Clean up test containers
                 sh """
-                    docker image prune -f
+                    docker rm -f test-backend-${BUILD_NUMBER} 2>/dev/null || true
+                    docker image prune -f --filter "until=24h"
                     docker container prune -f
                 """
             }
         }
         
         success {
-            echo '✅ =================================='
-            echo '✅ PIPELINE COMPLETED SUCCESSFULLY!'
-            echo '✅ =================================='
-            echo "Backend Image: ${BACKEND_IMAGE}:${IMAGE_TAG}"
-            echo "Frontend Image: ${FRONTEND_IMAGE}:${IMAGE_TAG}"
-            echo "Deployed to: http://${EC2_HOST}"
+            script {
+                echo '✅ =================================='
+                echo '✅ PIPELINE COMPLETED SUCCESSFULLY!'
+                echo '✅ =================================='
+                echo "Backend Image: ${BACKEND_IMAGE}:${IMAGE_TAG}"
+                echo "Frontend Image: ${FRONTEND_IMAGE}:${IMAGE_TAG}"
+                echo "Deployed to: http://${EC2_HOST}"
+                echo "Build: #${BUILD_NUMBER} by ${env.GIT_AUTHOR}"
+            }
         }
         
         failure {
-            echo '❌ =================================='
-            echo '❌ PIPELINE FAILED!'
-            echo '❌ =================================='
+            script {
+                echo '❌ =================================='
+                echo '❌ PIPELINE FAILED!'
+                echo '❌ =================================='
+                echo "Stage: ${env.STAGE_NAME}"
+                echo "Build: #${BUILD_NUMBER}"
+                // Collect logs for debugging
+                sh '''
+                    echo "Docker containers:"
+                    docker ps -a || true
+                    echo "Recent logs:"
+                    docker logs test-backend-${BUILD_NUMBER} 2>&1 | tail -50 || true
+                '''
+            }
         }
     }
 }
