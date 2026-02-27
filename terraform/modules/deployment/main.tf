@@ -7,12 +7,12 @@ resource "null_resource" "deploy_app" {
     docker_registry       = var.docker_registry
     aws_region            = var.aws_region
     monitoring_private_ip = var.monitoring_private_ip
-    compose_file_sha      = filesha256("${path.root}/../docker-compose.prod.yml")
+    compose_file_sha      = filesha256("${path.root}/../docker-compose.yml")
     promtail_config_sha   = filesha256("${path.root}/../monitoring/config/promtail-app.yml")
   }
 
   provisioner "file" {
-    source      = "${path.root}/../docker-compose.prod.yml"
+    source      = "${path.root}/../docker-compose.yml"
     destination = "/home/ec2-user/docker-compose.yml"
 
     connection {
