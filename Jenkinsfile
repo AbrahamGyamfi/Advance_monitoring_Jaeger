@@ -186,10 +186,10 @@ pipeline {
                     echo '🚀 Deploying to EC2 via private IP...'
                     withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"]]) {
                         sh """
-                            ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${EC2_USER}@${APP_PRIVATE_IP} 'mkdir -p ~/${APP_NAME}'
-                            scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no docker-compose.prod.yml ${EC2_USER}@${APP_PRIVATE_IP}:~/${APP_NAME}/docker-compose.yml
-                            aws ecr get-login-password --region ${AWS_REGION} | ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${EC2_USER}@${APP_PRIVATE_IP} "docker login --username AWS --password-stdin ${ECR_REGISTRY}"
-                            ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${EC2_USER}@${APP_PRIVATE_IP} '
+                            ssh -i /var/lib/jenkins/.ssh/id_rsa -o StrictHostKeyChecking=no ${EC2_USER}@${APP_PRIVATE_IP} 'mkdir -p ~/${APP_NAME}'
+                            scp -i /var/lib/jenkins/.ssh/id_rsa -o StrictHostKeyChecking=no docker-compose.prod.yml ${EC2_USER}@${APP_PRIVATE_IP}:~/${APP_NAME}/docker-compose.yml
+                            aws ecr get-login-password --region ${AWS_REGION} | ssh -i /var/lib/jenkins/.ssh/id_rsa -o StrictHostKeyChecking=no ${EC2_USER}@${APP_PRIVATE_IP} "docker login --username AWS --password-stdin ${ECR_REGISTRY}"
+                            ssh -i /var/lib/jenkins/.ssh/id_rsa -o StrictHostKeyChecking=no ${EC2_USER}@${APP_PRIVATE_IP} '
                                 cd ~/${APP_NAME}
                                 docker pull ${BACKEND_IMAGE}:${IMAGE_TAG}
                                 docker pull ${FRONTEND_IMAGE}:${IMAGE_TAG}
@@ -214,7 +214,7 @@ pipeline {
                     echo '🏥 Running health checks...'
                     def healthStatus = sh(
                         script: """
-                            ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${EC2_USER}@${APP_PRIVATE_IP} 'curl -s http://localhost:${APP_PORT}/health | grep healthy'
+                            ssh -i /var/lib/jenkins/.ssh/id_rsa -o StrictHostKeyChecking=no ${EC2_USER}@${APP_PRIVATE_IP} 'curl -s http://localhost:${APP_PORT}/health | grep healthy'
                         """,
                         returnStatus: true
                     )
