@@ -266,36 +266,38 @@ pipeline {
     
     post {
         always {
-            node {
-                script {
-                    echo 'Cleaning up...'
-                    sh """
-                        # Remove test containers
-                        docker rm -f test-backend-${BUILD_NUMBER} 2>/dev/null || true
-                        
-                        # Remove stopped containers
-                        docker container prune -f
-                        
-                        # Remove dangling images
-                        docker image prune -f
-                        
-                        # Clean workspace node_modules with sudo
-                        sudo rm -rf backend/node_modules frontend/node_modules || true
-                        
-                        # Show disk usage
-                        echo "Disk usage:"
-                        df -h / | tail -1
-                    """
+            script {
+                echo 'Cleaning up...'
+                sh """
+                    # Remove test containers
+                    docker rm -f test-backend-${BUILD_NUMBER} 2>/dev/null || true
                     
-                    // Calculate and display build duration
+                    # Remove stopped containers
+                    docker container prune -f
+                    
+                    # Remove dangling images
+                    docker image prune -f
+                    
+                    # Clean workspace node_modules with sudo
+                    sudo rm -rf backend/node_modules frontend/node_modules || true
+                    
+                    # Show disk usage
+                    echo "Disk usage:"
+                    df -h / | tail -1
+                """
+                
+                // Calculate and display build duration
+                try {
                     def duration = (System.currentTimeMillis() - env.BUILD_START_TIME.toLong()) / 1000
                     echo "Total build duration: ${duration}s (${duration/60}m)"
+                } catch (Exception e) {
+                    echo "Could not calculate build duration"
                 }
             }
         }
         success {
-            node {
-                script {
+            script {
+                try {
                     def duration = (System.currentTimeMillis() - env.BUILD_START_TIME.toLong()) / 1000
                     echo '=================================='
                     echo 'PIPELINE COMPLETED SUCCESSFULLY!'
@@ -306,12 +308,18 @@ pipeline {
                     echo "Frontend: ${FRONTEND_IMAGE}:${IMAGE_TAG}"
                     echo "Deployed to: http://${EC2_HOST}"
                     echo "Metrics: http://${EC2_HOST}:5000/metrics"
+                } catch (Exception e) {
+                    echo '=================================='
+                    echo 'PIPELINE COMPLETED SUCCESSFULLY!'
+                    echo '=================================='
+                    echo "Build: #${BUILD_NUMBER}"
+                    echo "Deployed to: http://${EC2_HOST}"
                 }
             }
         }
         failure {
-            node {
-                script {
+            script {
+                try {
                     def duration = (System.currentTimeMillis() - env.BUILD_START_TIME.toLong()) / 1000
                     echo '=================================='
                     echo 'PIPELINE FAILED!'
@@ -319,6 +327,11 @@ pipeline {
                     echo "Duration: ${duration}s"
                     echo "Build: #${BUILD_NUMBER}"
                     echo "Check logs: ${BUILD_URL}console"
+                } catch (Exception e) {
+                    echo '=================================='
+                    echo 'PIPELINE FAILED!'
+                    echo '=================================='
+                    echo "Build: #${BUILD_NUMBER}"
                 }
             }
         }
