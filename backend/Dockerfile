@@ -1,5 +1,18 @@
-# Backend Dockerfile
-FROM node:18-alpine
+# Backend Dockerfile - Multi-stage build
+
+# Stage 1: Dependencies
+FROM node:18-alpine AS dependencies
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install all dependencies (including dev dependencies for potential build steps)
+RUN npm ci && npm cache clean --force
+
+# Stage 2: Production
+FROM node:18-alpine AS production
 
 ARG BUILD_DATE
 ARG VCS_REF
@@ -14,12 +27,19 @@ LABEL org.opencontainers.image.description="Node.js backend for TaskFlow applica
 
 WORKDIR /app
 
+# Install only runtime dependencies
 RUN apk add --no-cache wget
 
+# Copy package files
 COPY package*.json ./
+
+# Install only production dependencies
 RUN npm ci --omit=dev && npm cache clean --force
 
+# Copy application files
 COPY --chown=node:node app.js logger.js metrics.js server.js telemetry.js ./
+
+# Switch to non-root user
 USER node
 
 EXPOSE 5000

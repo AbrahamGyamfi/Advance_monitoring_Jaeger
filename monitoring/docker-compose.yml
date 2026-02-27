@@ -11,8 +11,18 @@ services:
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--storage.tsdb.retention.size=5GB'
       - '--web.enable-lifecycle'
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
     networks:
       - monitoring
 
@@ -26,6 +36,14 @@ services:
     command:
       - '--config.file=/etc/alertmanager/alertmanager.yml'
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
     networks:
       - monitoring
 
@@ -38,6 +56,14 @@ services:
       - "16686:16686"
       - "4318:4318"
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
     networks:
       - monitoring
 
@@ -51,6 +77,14 @@ services:
       - loki_data:/loki
     command: -config.file=/etc/loki/local-config.yaml
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
     networks:
       - monitoring
 
@@ -70,6 +104,14 @@ services:
       - ./provisioning/dashboards/dashboard.yml:/etc/grafana/provisioning/dashboards/dashboard.yml:ro
       - ./dashboards:/var/lib/grafana/dashboards:ro
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
     depends_on:
       - prometheus
       - loki

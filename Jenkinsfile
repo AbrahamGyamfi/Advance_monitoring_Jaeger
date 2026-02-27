@@ -11,6 +11,7 @@ pipeline {
         APP_SERVER_IP = credentials('app-server-ip')
         APP_PRIVATE_IP = credentials('app-private-ip')
         MONITORING_HOST = credentials('monitoring-host')
+        MONITORING_PUBLIC_IP = credentials('monitoring-public-ip')
         ECR_REGISTRY = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
         AWS_CREDENTIALS_ID = 'aws-credentials'
         
@@ -28,6 +29,7 @@ pipeline {
         
         EC2_CREDENTIALS_ID = 'app-server-ssh'
         EC2_HOST = "${APP_SERVER_IP}"
+        BUILD_START_TIME = "${System.currentTimeMillis()}"
     }
     
     options {
@@ -40,7 +42,7 @@ pipeline {
         stage('Checkout') {
             steps {
                 script {
-                    echo '📥 Checking out code...'
+                    echo 'Checking out code...'
                     checkout scm
                     env.GIT_COMMIT_MSG = sh(script: 'git log -1 --pretty=%B', returnStdout: true).trim()
                     env.GIT_AUTHOR = sh(script: 'git log -1 --pretty=%an', returnStdout: true).trim()
@@ -55,11 +57,20 @@ pipeline {
                 stage('Build Backend') {
                     steps {
                         script {
-                            echo '🔨 Building backend Docker image...'
-                            dir('backend') {
-                                sh """
-                                    docker build --build-arg BUILD_DATE=\$(date -u +'%Y-%m-%dT%H:%M:%SZ') --build-arg VCS_REF=\${GIT_COMMIT} --build-arg BUILD_NUMBER=\${BUILD_NUMBER} -t ${BACKEND_IMAGE}:${IMAGE_TAG} .
-                                """
+                            echo 'Building backend Docker image with layer caching...'
+                            withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"]]) {
+                                dir('backend') {
+                                    sh """
+                                        aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
+                                        docker pull ${BACKEND_IMAGE}:latest || true
+                                        docker build \
+                                            --cache-from ${BACKEND_IMAGE}:latest \
+                                            --build-arg BUILD_DATE=\$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
+                                            --build-arg VCS_REF=\${GIT_COMMIT} \
+                                            --build-arg BUILD_NUMBER=\${BUILD_NUMBER} \
+                                            -t ${BACKEND_IMAGE}:${IMAGE_TAG} .
+                                    """
+                                }
                             }
                         }
                     }
@@ -67,11 +78,20 @@ pipeline {
                 stage('Build Frontend') {
                     steps {
                         script {
-                            echo '🔨 Building frontend Docker image...'
-                            dir('frontend') {
-                                sh """
-                                    docker build --build-arg BUILD_DATE=\$(date -u +'%Y-%m-%dT%H:%M:%SZ') --build-arg VCS_REF=\${GIT_COMMIT} --build-arg BUILD_NUMBER=\${BUILD_NUMBER} -t ${FRONTEND_IMAGE}:${IMAGE_TAG} .
-                                """
+                            echo 'Building frontend Docker image with layer caching...'
+                            withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"]]) {
+                                dir('frontend') {
+                                    sh """
+                                        aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
+                                        docker pull ${FRONTEND_IMAGE}:latest || true
+                                        docker build \
+                                            --cache-from ${FRONTEND_IMAGE}:latest \
+                                            --build-arg BUILD_DATE=\$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
+                                            --build-arg VCS_REF=\${GIT_COMMIT} \
+                                            --build-arg BUILD_NUMBER=\${BUILD_NUMBER} \
+                                            -t ${FRONTEND_IMAGE}:${IMAGE_TAG} .
+                                    """
+                                }
                             }
                         }
                     }
@@ -84,7 +104,7 @@ pipeline {
                 stage('Backend Tests') {
                     steps {
                         script {
-                            echo '🧪 Running backend unit tests...'
+                            echo 'Running backend unit tests...'
                             dir('backend') {
                                 sh """
                                     docker run --rm -v \$(pwd):/app -w /app node:${NODE_VERSION}-alpine sh -c 'npm ci && npm test'
@@ -96,7 +116,7 @@ pipeline {
                 stage('Frontend Tests') {
                     steps {
                         script {
-                            echo '🧪 Running frontend unit tests...'
+                            echo 'Running frontend unit tests...'
                             dir('frontend') {
                                 sh """
                                     docker run --rm -v \$(pwd):/app -w /app node:${NODE_VERSION}-alpine sh -c 'npm ci && CI=true npm test -- --passWithNoTests'
@@ -113,7 +133,7 @@ pipeline {
                 stage('Backend Lint') {
                     steps {
                         script {
-                            echo '🔍 Running backend linting...'
+                            echo 'Running backend linting...'
                             dir('backend') {
                                 sh """
                                     docker run --rm -v \$(pwd):/app -w /app node:${NODE_VERSION}-alpine sh -c 'npm ci && npm run lint'
@@ -125,7 +145,7 @@ pipeline {
                 stage('Test Images') {
                     steps {
                         script {
-                            echo '🐳 Testing Docker images...'
+                            echo 'Testing Docker images...'
                             sh """
                                 docker run --rm ${BACKEND_IMAGE}:${IMAGE_TAG} node --version
                                 docker run --rm ${FRONTEND_IMAGE}:${IMAGE_TAG} nginx -v
@@ -139,7 +159,7 @@ pipeline {
         stage('Integration Tests') {
             steps {
                 script {
-                    echo '🔗 Running integration tests...'
+                    echo 'Running integration tests...'
                     sh '''
                         set -euo pipefail
                         CONTAINER_NAME="test-backend-${BUILD_NUMBER}"
@@ -161,21 +181,38 @@ pipeline {
         }
         
         stage('Push to ECR') {
-            steps {
-                script {
-                    echo '📤 Pushing images to AWS ECR...'
-                    withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"]]) {
-                        sh """
-                            aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
-                            docker push ${BACKEND_IMAGE}:${IMAGE_TAG}
-                            docker tag ${BACKEND_IMAGE}:${IMAGE_TAG} ${BACKEND_IMAGE}:latest
-                            docker push ${BACKEND_IMAGE}:latest
-                            docker push ${FRONTEND_IMAGE}:${IMAGE_TAG}
-                            docker tag ${FRONTEND_IMAGE}:${IMAGE_TAG} ${FRONTEND_IMAGE}:latest
-                            docker push ${FRONTEND_IMAGE}:latest
-                        """
+            parallel {
+                stage('Push Backend Images') {
+                    steps {
+                        script {
+                            echo 'Pushing backend images to ECR...'
+                            withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"]]) {
+                                sh """
+                                    aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
+                                    docker push ${BACKEND_IMAGE}:${IMAGE_TAG}
+                                    docker tag ${BACKEND_IMAGE}:${IMAGE_TAG} ${BACKEND_IMAGE}:latest
+                                    docker push ${BACKEND_IMAGE}:latest
+                                """
+                            }
+                            echo "Backend images pushed!"
+                        }
                     }
-                    echo "✅ Images pushed to ECR!"
+                }
+                stage('Push Frontend Images') {
+                    steps {
+                        script {
+                            echo 'Pushing frontend images to ECR...'
+                            withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"]]) {
+                                sh """
+                                    aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
+                                    docker push ${FRONTEND_IMAGE}:${IMAGE_TAG}
+                                    docker tag ${FRONTEND_IMAGE}:${IMAGE_TAG} ${FRONTEND_IMAGE}:latest
+                                    docker push ${FRONTEND_IMAGE}:latest
+                                """
+                            }
+                            echo "Frontend images pushed!"
+                        }
+                    }
                 }
             }
         }
@@ -183,7 +220,7 @@ pipeline {
         stage('Deploy to EC2') {
             steps {
                 script {
-                    echo '🚀 Deploying to EC2 via private IP...'
+                    echo 'Deploying to EC2 via private IP...'
                     withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"]]) {
                         sh """
                             ssh -i /var/lib/jenkins/.ssh/id_rsa -o StrictHostKeyChecking=no ${EC2_USER}@${APP_PRIVATE_IP} 'mkdir -p ~/${APP_NAME}'
@@ -200,7 +237,7 @@ pipeline {
                                 docker-compose up -d
                                 sleep 10
                                 curl -f http://localhost:${APP_PORT}/health || exit 1
-                                echo "✅ Deployment successful!"
+                                echo "Deployment successful!"
                             '
                         """
                     }
@@ -211,7 +248,7 @@ pipeline {
         stage('Health Check') {
             steps {
                 script {
-                    echo '🏥 Running health checks...'
+                    echo 'Running health checks...'
                     def healthStatus = sh(
                         script: """
                             ssh -i /var/lib/jenkins/.ssh/id_rsa -o StrictHostKeyChecking=no ${EC2_USER}@${APP_PRIVATE_IP} 'curl -s http://localhost:${APP_PORT}/health | grep healthy'
@@ -219,9 +256,9 @@ pipeline {
                         returnStatus: true
                     )
                     if (healthStatus == 0) {
-                        echo "✅ Application is healthy!"
+                        echo "Application is healthy!"
                     } else {
-                        error "❌ Health check failed!"
+                        error "Health check failed!"
                     }
                 }
             }
@@ -231,7 +268,7 @@ pipeline {
     post {
         always {
             script {
-                echo '🧹 Cleaning up...'
+                echo 'Cleaning up...'
                 sh """
                     # Remove test containers
                     docker rm -f test-backend-${BUILD_NUMBER} 2>/dev/null || true
@@ -246,23 +283,41 @@ pipeline {
                     sudo rm -rf backend/node_modules frontend/node_modules || true
                     
                     # Show disk usage
-                    echo "📊 Disk usage:"
+                    echo "Disk usage:"
                     df -h / | tail -1
                 """
+                
+                // Calculate and display build duration
+                def duration = (System.currentTimeMillis() - BUILD_START_TIME.toLong()) / 1000
+                echo "Total build duration: ${duration}s (${duration/60}m)"
             }
         }
         success {
-            echo '✅ =================================='
-            echo '✅ PIPELINE COMPLETED SUCCESSFULLY!'
-            echo '✅ =================================='
-            echo "Backend Image: ${BACKEND_IMAGE}:${IMAGE_TAG}"
-            echo "Frontend Image: ${FRONTEND_IMAGE}:${IMAGE_TAG}"
-            echo "Deployed to: http://${EC2_HOST}"
+            script {
+                def duration = (System.currentTimeMillis() - BUILD_START_TIME.toLong()) / 1000
+                echo '=================================='
+                echo 'PIPELINE COMPLETED SUCCESSFULLY!'
+                echo '=================================='
+                echo "Duration: ${duration}s (${duration/60}m)"
+                echo "Build: #${BUILD_NUMBER}"
+                echo "Backend: ${BACKEND_IMAGE}:${IMAGE_TAG}"
+                echo "Frontend: ${FRONTEND_IMAGE}:${IMAGE_TAG}"
+                echo "Deployed to: http://${EC2_HOST}"
+                echo "Metrics: http://${EC2_HOST}:5000/metrics"
+                echo "Grafana: http://${MONITORING_PUBLIC_IP}:3000"
+                echo "Jaeger: http://${MONITORING_PUBLIC_IP}:16686"
+            }
         }
         failure {
-            echo '❌ =================================='
-            echo '❌ PIPELINE FAILED!'
-            echo '❌ =================================='
+            script {
+                def duration = (System.currentTimeMillis() - BUILD_START_TIME.toLong()) / 1000
+                echo '=================================='
+                echo 'PIPELINE FAILED!'
+                echo '=================================='
+                echo "Duration: ${duration}s"
+                echo "Build: #${BUILD_NUMBER}"
+                echo "Check logs: ${BUILD_URL}console"
+            }
         }
     }
 }
