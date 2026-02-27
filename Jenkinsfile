@@ -207,64 +207,60 @@ pipeline {
         
         stage('Deploy to EC2') {
             steps {
-                sshagent(credentials: ["${EC2_CREDENTIALS_ID}"]) {
-                    script {
-                        echo '🚀 Deploying to EC2...'
-                        sh """
-                            mkdir -p ~/.ssh
-                            chmod 700 ~/.ssh
-                            ssh-keyscan -H ${EC2_HOST} >> ~/.ssh/known_hosts 2>/dev/null || true
-                            ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} 'mkdir -p ~/taskflow'
-                            scp -o StrictHostKeyChecking=no docker-compose.prod.yml ${EC2_USER}@${EC2_HOST}:~/taskflow/docker-compose.yml
-                        """
-                        
-                        sh """
-                            ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} bash -s ${ECR_REGISTRY} ${IMAGE_TAG} ${AWS_REGION} ${APP_PORT} ${HEALTH_CHECK_TIMEOUT} ${HEALTH_CHECK_INTERVAL} << 'ENDSSH'
+                script {
+                    echo '🚀 Deploying to EC2...'
+                    sh '''
+                        mkdir -p ~/.ssh
+                        chmod 700 ~/.ssh
+                        ssh-keyscan -H ${EC2_HOST} >> ~/.ssh/known_hosts 2>/dev/null || true
+                        ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} 'mkdir -p ~/taskflow'
+                        scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no docker-compose.prod.yml ${EC2_USER}@${EC2_HOST}:~/taskflow/docker-compose.yml
+                    '''
+                    
+                    sh '''
+                        ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} bash -s ${ECR_REGISTRY} ${IMAGE_TAG} ${AWS_REGION} ${APP_PORT} ${HEALTH_CHECK_TIMEOUT} ${HEALTH_CHECK_INTERVAL} << 'ENDSSH'
 set -e
 cd ~/taskflow
-REGISTRY="\$1"
-TAG="\$2"
-REGION="\$3"
-PORT="\$4"
-TIMEOUT="\$5"
-INTERVAL="\$6"
+REGISTRY="$1"
+TAG="$2"
+REGION="$3"
+PORT="$4"
+TIMEOUT="$5"
+INTERVAL="$6"
 
-aws ecr get-login-password --region "\$REGION" | docker login --username AWS --password-stdin "\$REGISTRY"
-docker pull "\$REGISTRY/taskflow-backend:\$TAG"
-docker pull "\$REGISTRY/taskflow-frontend:\$TAG"
+aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "$REGISTRY"
+docker pull "$REGISTRY/taskflow-backend:$TAG"
+docker pull "$REGISTRY/taskflow-frontend:$TAG"
 
-export REGISTRY_URL="\$REGISTRY"
-export IMAGE_TAG="\$TAG"
+export REGISTRY_URL="$REGISTRY"
+export IMAGE_TAG="$TAG"
 docker-compose up -d
 
-MAX_ITER=\$((\$TIMEOUT / \$INTERVAL))
-for i in \$(seq 1 \$MAX_ITER); do
-    if curl -fsS "http://localhost:\$PORT/health" >/dev/null 2>&1; then
+MAX_ITER=$(( $TIMEOUT / $INTERVAL ))
+for i in $(seq 1 $MAX_ITER); do
+    if curl -fsS "http://localhost:$PORT/health" >/dev/null 2>&1; then
         echo "Deployment successful!"
         exit 0
     fi
-    sleep "\$INTERVAL"
+    sleep "$INTERVAL"
 done
 echo "Health check failed"
 docker-compose logs
 exit 1
 ENDSSH
-                        """
-                    }
+                    '''
                 }
             }
         }
         
         stage('Health Check') {
             steps {
-                sshagent(credentials: ["${EC2_CREDENTIALS_ID}"]) {
-                    script {
-                        echo '🏥 Running health checks...'
-                        sh """
-                            ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} 'curl -fsS http://localhost:${APP_PORT}/health'
-                        """
-                        echo "✅ Application is healthy!"
-                    }
+                script {
+                    echo '🏥 Running health checks...'
+                    sh '''
+                        ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} 'curl -fsS http://localhost:${APP_PORT}/health'
+                    '''
+                    echo "✅ Application is healthy!"
                 }
             }
         }
