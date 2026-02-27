@@ -242,25 +242,12 @@ pipeline {
                     # Remove dangling images
                     docker image prune -f
                     
-                    # Remove unused images (not just dangling)
-                    docker image prune -a -f --filter "until=24h"
+                    # Clean workspace node_modules with sudo
+                    sudo rm -rf backend/node_modules frontend/node_modules || true
                     
-                    # Remove build cache
-                    docker builder prune -f --filter "until=24h"
-                    
-                    # Remove unused volumes
-                    docker volume prune -f
-                    
-                    # Remove unused networks
-                    docker network prune -f
-                    
-                    # Clean workspace node_modules
-                    rm -rf backend/node_modules frontend/node_modules || true
-                    
-                    # Show disk usage after cleanup
-                    echo "📊 Disk usage after cleanup:"
-                    df -h /var/lib/docker 2>/dev/null || df -h /
-                    docker system df
+                    # Show disk usage
+                    echo "📊 Disk usage:"
+                    df -h / | tail -1
                 """
             }
         }
