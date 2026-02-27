@@ -196,6 +196,7 @@ pipeline {
                                 docker-compose down || true
                                 export REGISTRY_URL=${ECR_REGISTRY}
                                 export IMAGE_TAG=${IMAGE_TAG}
+                                export MONITORING_HOST=${MONITORING_HOST}
                                 docker-compose up -d
                                 sleep 10
                                 curl -f http://localhost:${APP_PORT}/health || exit 1
