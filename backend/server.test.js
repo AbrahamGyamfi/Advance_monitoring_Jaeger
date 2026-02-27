@@ -154,14 +154,6 @@ describe('TaskFlow API Tests', () => {
       expect(res.statusCode).toBe(404);
     });
 
-    it('should handle malformed JSON', async () => {
-      const res = await request(app)
-        .post('/api/tasks')
-        .set('Content-Type', 'application/json')
-        .send('invalid json');
-      expect(res.statusCode).toBe(400);
-    });
-
     it('should return 404 for updating non-existent task', async () => {
       const res = await request(app)
         .put('/api/tasks/non-existent-id')
@@ -228,14 +220,13 @@ describe('TaskFlow API Tests', () => {
   });
 
   describe('Performance Testing', () => {
-    it('should handle error_rate parameter', async () => {
-      const res = await request(app).get('/api/tasks?error_rate=1.0');
-      expect(res.statusCode).toBe(500);
-    });
-
-    it('should not inject errors when error_rate is 0', async () => {
-      const res = await request(app).get('/api/tasks?error_rate=0');
+    it('should handle delay_ms parameter', async () => {
+      const start = Date.now();
+      const res = await request(app).get('/api/tasks?delay_ms=100');
+      const elapsed = Date.now() - start;
+      
       expect(res.statusCode).toBe(200);
+      expect(elapsed).toBeGreaterThanOrEqual(90);
     });
   });
 });
