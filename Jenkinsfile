@@ -211,13 +211,15 @@ pipeline {
                     script {
                         echo '🚀 Deploying to EC2...'
                         sh """
+                            mkdir -p ~/.ssh
+                            chmod 700 ~/.ssh
                             ssh-keyscan -H ${EC2_HOST} >> ~/.ssh/known_hosts 2>/dev/null || true
-                            ssh ${EC2_USER}@${EC2_HOST} 'mkdir -p ~/taskflow'
-                            scp docker-compose.prod.yml ${EC2_USER}@${EC2_HOST}:~/taskflow/docker-compose.yml
+                            ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} 'mkdir -p ~/taskflow'
+                            scp -o StrictHostKeyChecking=no docker-compose.prod.yml ${EC2_USER}@${EC2_HOST}:~/taskflow/docker-compose.yml
                         """
                         
                         sh """
-                            ssh ${EC2_USER}@${EC2_HOST} bash -s ${ECR_REGISTRY} ${IMAGE_TAG} ${AWS_REGION} ${APP_PORT} ${HEALTH_CHECK_TIMEOUT} ${HEALTH_CHECK_INTERVAL} << 'ENDSSH'
+                            ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} bash -s ${ECR_REGISTRY} ${IMAGE_TAG} ${AWS_REGION} ${APP_PORT} ${HEALTH_CHECK_TIMEOUT} ${HEALTH_CHECK_INTERVAL} << 'ENDSSH'
 set -e
 cd ~/taskflow
 REGISTRY="\$1"
@@ -259,7 +261,7 @@ ENDSSH
                     script {
                         echo '🏥 Running health checks...'
                         sh """
-                            ssh ${EC2_USER}@${EC2_HOST} 'curl -fsS http://localhost:${APP_PORT}/health'
+                            ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} 'curl -fsS http://localhost:${APP_PORT}/health'
                         """
                         echo "✅ Application is healthy!"
                     }
