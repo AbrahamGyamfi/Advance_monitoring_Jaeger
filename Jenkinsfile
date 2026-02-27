@@ -230,10 +230,9 @@ pipeline {
     
     post {
         always {
-            node('any') {
-                script {
-                    echo '🧹 Cleaning up...'
-                    sh """
+            script {
+                echo '🧹 Cleaning up...'
+                sh """
                     # Remove test containers
                     docker rm -f test-backend-${BUILD_NUMBER} 2>/dev/null || true
                     
@@ -263,7 +262,6 @@ pipeline {
                     df -h /var/lib/docker 2>/dev/null || df -h /
                     docker system df
                 """
-                }
             }
         }
         success {
