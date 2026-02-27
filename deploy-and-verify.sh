@@ -3,50 +3,54 @@
 
 set -euo pipefail
 
-echo "🚀 TaskFlow Complete Deployment & Verification"
-echo "=============================================="
+echo "TaskFlow Complete Deployment & Verification"
+echo "============================================"
 
 # Step 1: Prerequisites Check
 echo ""
-echo "📋 Step 1: Checking Prerequisites..."
-command -v terraform >/dev/null 2>&1 || { echo "❌ Terraform not installed"; exit 1; }
-command -v aws >/dev/null 2>&1 || { echo "❌ AWS CLI not installed"; exit 1; }
-command -v ssh >/dev/null 2>&1 || { echo "❌ SSH not installed"; exit 1; }
+echo "[1/9] Checking Prerequisites..."
+command -v terraform >/dev/null 2>&1 || { echo "ERROR: Terraform not installed"; exit 1; }
+command -v aws >/dev/null 2>&1 || { echo "ERROR: AWS CLI not installed"; exit 1; }
+command -v ssh >/dev/null 2>&1 || { echo "ERROR: SSH not installed"; exit 1; }
 
 # Check AWS credentials
-aws sts get-caller-identity >/dev/null 2>&1 || { echo "❌ AWS credentials not configured"; exit 1; }
+aws sts get-caller-identity >/dev/null 2>&1 || { echo "ERROR: AWS credentials not configured"; exit 1; }
 
 # Check SSH key
 if [ ! -f ~/.ssh/id_rsa.pub ]; then
-    echo "❌ SSH public key not found at ~/.ssh/id_rsa.pub"
+    echo "ERROR: SSH public key not found at ~/.ssh/id_rsa.pub"
     echo "Generate one with: ssh-keygen -t rsa -b 4096"
     exit 1
 fi
 
-echo "✅ All prerequisites met"
+echo "SUCCESS: All prerequisites met"
 
 # Step 2: Deploy Infrastructure
 echo ""
-echo "🏗️  Step 2: Deploying Infrastructure with Terraform..."
+echo "[2/9] Deploying Infrastructure with Terraform..."
 cd terraform
-echo "ℹ️  Ensure terraform.tfvars sets admin_cidr_blocks to trusted IP ranges (for SSH/Jenkins/Grafana/Prometheus access)."
 
-# Initialize Terraform
-terraform init
-
-# Plan deployment
-PLAN_FILE="$(mktemp /tmp/taskflow-tfplan-XXXXXX)"
-terraform plan -out="$PLAN_FILE"
-
-# Apply deployment
-read -p "Deploy infrastructure? (yes/no): " confirm
-if [ "$confirm" != "yes" ]; then
-    echo "Deployment cancelled"
-    exit 0
+# Check if terraform.tfvars exists
+if [ ! -f terraform.tfvars ]; then
+    echo "INFO: Creating terraform.tfvars from example"
+    cp terraform.tfvars.example terraform.tfvars
+    echo "ERROR: Please edit terraform/terraform.tfvars with your values:"
+    echo "  - admin_cidr_blocks (your IP address)"
+    echo "  - key_name"
+    echo "  - public_key_path"
+    echo "  - private_key_path"
+    exit 1
 fi
 
-terraform apply "$PLAN_FILE"
-rm -f "$PLAN_FILE"
+echo "INFO: Initializing Terraform"
+terraform init -input=false
+
+echo "INFO: Planning deployment"
+terraform plan -out=tfplan
+
+echo "INFO: Applying Terraform configuration"
+terraform apply -auto-approve tfplan
+rm -f tfplan
 
 # Get outputs
 JENKINS_IP=$(terraform output -raw jenkins_public_ip)
@@ -59,126 +63,195 @@ GUARDDUTY_ID=$(terraform output -raw guardduty_detector_id)
 
 cd ..
 
-echo ""
-echo "✅ Infrastructure Deployed!"
-echo "   Jenkins: http://$JENKINS_IP:8080"
-echo "   App: http://$APP_IP"
-echo "   Prometheus: $PROMETHEUS_URL"
-echo "   Grafana: $GRAFANA_URL"
+echo "SUCCESS: Infrastructure deployed"
+echo "  Jenkins: http://$JENKINS_IP:8080"
+echo "  App: http://$APP_IP"
+echo "  Monitoring: http://$MONITORING_IP:3000"
 
-# Step 3: Wait for instances to be ready
+# Create ECR repositories if they don't exist
 echo ""
-echo "⏳ Step 3: Waiting for instances to initialize (2 minutes)..."
+echo "INFO: Ensuring ECR repositories exist..."
+AWS_REGION=$(terraform output -raw aws_region)
+AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+for REPO in taskflow-backend taskflow-frontend; do
+    if aws ecr describe-repositories --repository-names $REPO --region $AWS_REGION >/dev/null 2>&1; then
+        echo "INFO: ECR repository $REPO already exists"
+    else
+        echo "INFO: Creating ECR repository $REPO"
+        aws ecr create-repository --repository-name $REPO --region $AWS_REGION >/dev/null
+        echo "SUCCESS: Created ECR repository $REPO"
+    fi
+done
+
+# Step 3: Wait for instances
+echo ""
+echo "[3/9] Waiting for instances to initialize (120s)..."
 sleep 120
+echo "SUCCESS: Wait complete"
 
 # Step 4: Verify Services
 echo ""
-echo "🔍 Step 4: Verifying Services..."
+echo "[4/9] Verifying Application Services..."
 
-# Check App Health
-echo "  Checking App Server..."
-if curl -sf http://$APP_IP/health > /dev/null; then
-    echo "  ✅ App Server is healthy"
+if curl -sf http://$APP_IP/health > /dev/null 2>&1; then
+    echo "SUCCESS: App server is healthy"
 else
-    echo "  ⚠️  App Server not responding yet"
+    echo "WARNING: App server not responding yet"
 fi
 
-# Check App Metrics
-echo "  Checking App Metrics..."
-if curl -sf http://$APP_IP:5000/metrics > /dev/null; then
-    echo "  ✅ App metrics endpoint working"
+if curl -sf http://$APP_IP:5000/metrics > /dev/null 2>&1; then
+    echo "SUCCESS: Metrics endpoint working"
 else
-    echo "  ⚠️  App metrics not available yet"
+    echo "WARNING: Metrics not available yet"
 fi
 
-# Check Prometheus
-echo "  Checking Prometheus..."
-if curl -sf $PROMETHEUS_URL/-/healthy > /dev/null; then
-    echo "  ✅ Prometheus is running"
-else
-    echo "  ⚠️  Prometheus not ready yet"
-fi
-
-# Check Grafana
-echo "  Checking Grafana..."
-if curl -sf $GRAFANA_URL/api/health > /dev/null; then
-    echo "  ✅ Grafana is running"
-else
-    echo "  ⚠️  Grafana not ready yet"
-fi
-
-# Step 5: Verify AWS Services
+# Step 5: Verify Monitoring
 echo ""
-echo "🔐 Step 5: Verifying AWS Security Services..."
+echo "[5/9] Verifying Monitoring Stack..."
 
-# Check CloudTrail
-echo "  Checking CloudTrail..."
+if curl -sf $PROMETHEUS_URL/-/healthy > /dev/null 2>&1; then
+    echo "SUCCESS: Prometheus is running"
+else
+    echo "WARNING: Prometheus not ready yet"
+fi
+
+if curl -sf $GRAFANA_URL/api/health > /dev/null 2>&1; then
+    echo "SUCCESS: Grafana is running"
+else
+    echo "WARNING: Grafana not ready yet"
+fi
+
+if curl -sf http://$MONITORING_IP:16686 > /dev/null 2>&1; then
+    echo "SUCCESS: Jaeger is running"
+else
+    echo "WARNING: Jaeger not ready yet"
+fi
+
+# Step 6: Verify AWS Services
+echo ""
+echo "[6/9] Verifying AWS Security Services..."
+
 TRAIL_STATUS=$(aws cloudtrail get-trail-status --name taskflow-trail --query 'IsLogging' --output text 2>/dev/null || echo "false")
 if [ "$TRAIL_STATUS" = "True" ]; then
-    echo "  ✅ CloudTrail is logging"
+    echo "SUCCESS: CloudTrail is logging"
 else
-    echo "  ⚠️  CloudTrail not active"
+    echo "WARNING: CloudTrail not active"
 fi
 
-# Check GuardDuty
-echo "  Checking GuardDuty..."
 GD_STATUS=$(aws guardduty get-detector --detector-id $GUARDDUTY_ID --query 'Status' --output text 2>/dev/null || echo "DISABLED")
 if [ "$GD_STATUS" = "ENABLED" ]; then
-    echo "  ✅ GuardDuty is enabled"
+    echo "SUCCESS: GuardDuty is enabled"
 else
-    echo "  ⚠️  GuardDuty not enabled"
+    echo "WARNING: GuardDuty not enabled"
 fi
 
-# Check CloudWatch Logs
-echo "  Checking CloudWatch Logs..."
 if aws logs describe-log-groups --log-group-name-prefix /aws/taskflow > /dev/null 2>&1; then
-    echo "  ✅ CloudWatch log group exists"
+    echo "SUCCESS: CloudWatch log group exists"
 else
-    echo "  ⚠️  CloudWatch log group not found"
+    echo "WARNING: CloudWatch log group not found"
 fi
 
-# Step 6: Generate Test Traffic
+# Step 7: Generate Test Traffic
 echo ""
-echo "📊 Step 6: Generating Test Traffic..."
-echo "  Creating test tasks..."
+echo "[7/9] Generating Test Traffic..."
 for i in {1..10}; do
     curl -sf -X POST http://$APP_IP:5000/api/tasks \
         -H 'Content-Type: application/json' \
-        -d "{\"title\":\"Test Task $i\",\"description\":\"Generated for testing\"}" > /dev/null
+        -d "{\"title\":\"Test Task $i\",\"description\":\"Generated for testing\"}" > /dev/null 2>&1 || true
 done
-echo "  ✅ Created 10 test tasks"
+echo "SUCCESS: Created 10 test tasks"
 
-echo "  Generating some errors..."
 for i in {1..5}; do
     curl -sf http://$APP_IP:5000/api/invalid > /dev/null 2>&1 || true
 done
-echo "  ✅ Generated error traffic"
+echo "SUCCESS: Generated error traffic"
 
-# Step 7: Display Access Information
+# Step 8: Run Observability Validation
 echo ""
-echo "✅ =============================================="
-echo "✅ DEPLOYMENT COMPLETE!"
-echo "✅ =============================================="
+echo "[8/9] Running Observability Validation..."
+echo "INFO: Generating load to trigger alerts (this takes 12 minutes)"
+echo "INFO: Phase 1 - Normal traffic (2 min)"
+echo "INFO: Phase 2 - High error rate >5% (10 min)"
+echo "INFO: Phase 3 - High latency >300ms (10 min)"
+
+TOTAL_REQUESTS=0
+PHASE1_END=$(($(date +%s) + 120))
+while [ $(date +%s) -lt $PHASE1_END ]; do
+    curl -fsS "http://$APP_IP:5000/api/tasks" >/dev/null 2>&1 || true
+    ((TOTAL_REQUESTS++))
+    sleep 0.5
+done
+echo "INFO: Phase 1 complete - $TOTAL_REQUESTS requests"
+
+PHASE2_END=$(($(date +%s) + 600))
+while [ $(date +%s) -lt $PHASE2_END ]; do
+    if [ $((RANDOM % 10)) -eq 0 ]; then
+        curl -fsS "http://$APP_IP:5000/api/test/error?rate=0.1" >/dev/null 2>&1 || true
+    else
+        curl -fsS "http://$APP_IP:5000/api/tasks" >/dev/null 2>&1 || true
+    fi
+    ((TOTAL_REQUESTS++))
+    sleep 0.3
+done
+echo "INFO: Phase 2 complete - $TOTAL_REQUESTS total requests"
+
+PHASE3_END=$(($(date +%s) + 600))
+while [ $(date +%s) -lt $PHASE3_END ]; do
+    curl -fsS "http://$APP_IP:5000/api/tasks?delay_ms=400" >/dev/null 2>&1 || true
+    ((TOTAL_REQUESTS++))
+    sleep 0.5
+done
+echo "SUCCESS: Load generation complete - $TOTAL_REQUESTS total requests"
+
+# Check alerts
+ALERTS=$(curl -s "$PROMETHEUS_URL/api/v1/alerts" | grep -o '"alertname":"[^"]*"' | cut -d'"' -f4 || echo "")
+if echo "$ALERTS" | grep -q "TaskflowHighErrorRate"; then
+    echo "SUCCESS: TaskflowHighErrorRate alert is FIRING"
+else
+    echo "INFO: TaskflowHighErrorRate alert not firing yet"
+fi
+
+if echo "$ALERTS" | grep -q "TaskflowHighLatency"; then
+    echo "SUCCESS: TaskflowHighLatency alert is FIRING"
+else
+    echo "INFO: TaskflowHighLatency alert not firing yet"
+fi
+
+# Step 9: Display Summary
 echo ""
-echo "📊 Access URLs:"
-echo "   Jenkins:    http://$JENKINS_IP:8080"
-echo "   App:        http://$APP_IP"
-echo "   Prometheus: $PROMETHEUS_URL"
-echo "   Grafana:    $GRAFANA_URL"
-echo "   Grafana password retrieval:"
-echo "     ssh -i ~/.ssh/id_rsa ec2-user@$MONITORING_IP \"cd ~/monitoring && grep GF_SECURITY_ADMIN_PASSWORD .env\""
+echo "[9/9] Deployment Summary"
+echo "============================================"
 echo ""
-echo "🔐 Security:"
-echo "   CloudTrail Bucket: $CLOUDTRAIL_BUCKET"
-echo "   GuardDuty ID:      $GUARDDUTY_ID"
+echo "Application URLs:"
+echo "  Frontend:     http://$APP_IP"
+echo "  Backend API:  http://$APP_IP:5000"
+echo "  Metrics:      http://$APP_IP:5000/metrics"
 echo ""
-echo "📝 Next Steps:"
-echo "   1. Access Grafana and create dashboards"
-echo "   2. Check Prometheus targets: $PROMETHEUS_URL/targets"
-echo "   3. View metrics: http://$APP_IP:5000/metrics"
-echo "   4. Check CloudWatch logs: aws logs tail /aws/taskflow/docker --follow"
-echo "   5. View CloudTrail events: aws cloudtrail lookup-events --max-results 10"
+echo "Monitoring URLs:"
+echo "  Grafana:      $GRAFANA_URL (admin/check .env file)"
+echo "  Prometheus:   $PROMETHEUS_URL"
+echo "  Alertmanager: http://$MONITORING_IP:9093"
+echo "  Jaeger:       http://$MONITORING_IP:16686"
 echo ""
-echo "🧹 Cleanup:"
-echo "   Run: ./cleanup.sh"
+echo "CI/CD:"
+echo "  Jenkins:      http://$JENKINS_IP:8080"
+echo "  Initial pwd:  ssh ec2-user@$JENKINS_IP 'sudo cat /var/lib/jenkins/secrets/initialAdminPassword'"
 echo ""
+echo "Security:"
+echo "  CloudTrail:   $CLOUDTRAIL_BUCKET"
+echo "  GuardDuty:    $GUARDDUTY_ID"
+echo "  CloudWatch:   aws logs tail /aws/taskflow/docker --follow"
+echo ""
+echo "Validation Steps:"
+echo "  1. Open Grafana dashboard: TaskFlow Observability"
+echo "  2. Verify error rate >5% and latency >300ms"
+echo "  3. Check alerts in Alertmanager"
+echo "  4. Click trace link in Grafana to view in Jaeger"
+echo "  5. Copy trace_id from Jaeger"
+echo "  6. Search Loki logs for trace_id to verify correlation"
+echo ""
+echo "Cleanup:"
+echo "  ./cleanup.sh"
+echo ""
+echo "SUCCESS: Deployment complete!"

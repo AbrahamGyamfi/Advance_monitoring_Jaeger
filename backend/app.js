@@ -362,6 +362,21 @@ app.delete('/api/tasks/:id', (req, res) => {
   }
 });
 
+// Test route for error simulation (observability validation)
+app.get('/api/test/error', (req, res) => {
+  const errorRate = parseFloat(req.query.rate) || 0.5;
+  
+  if (Math.random() < errorRate) {
+    logger.error('simulated_error', {
+      error_rate: errorRate,
+      random_value: Math.random()
+    });
+    return res.status(500).json({ error: 'Simulated error for observability testing' });
+  }
+  
+  res.status(200).json({ message: 'Success', error_rate: errorRate });
+});
+
 app.use((req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });

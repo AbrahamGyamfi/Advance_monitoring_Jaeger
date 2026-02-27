@@ -37,4 +37,14 @@ DOCKER
 
 systemctl restart docker
 
+# Pre-pull monitoring images to speed up deployment
+echo "Pre-pulling Docker images..."
+docker pull prom/prometheus:latest &
+docker pull grafana/grafana:latest &
+docker pull prom/alertmanager:latest &
+docker pull jaegertracing/all-in-one:latest &
+docker pull grafana/loki:latest &
+docker pull grafana/promtail:latest &
+wait
+
 echo "Monitoring server setup completed!"

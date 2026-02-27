@@ -79,9 +79,7 @@ resource "aws_cloudtrail" "main" {
 
   depends_on = [aws_s3_bucket_policy.cloudtrail]
 
-  lifecycle {
-    prevent_destroy = true
-  }
+
 
   tags = {
     Name    = "TaskFlow-CloudTrail"
@@ -92,9 +90,7 @@ resource "aws_cloudtrail" "main" {
 resource "aws_guardduty_detector" "main" {
   enable = true
 
-  lifecycle {
-    prevent_destroy = true
-  }
+
 
   tags = {
     Name    = "TaskFlow-GuardDuty"

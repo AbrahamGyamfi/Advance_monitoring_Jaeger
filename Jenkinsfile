@@ -315,39 +315,42 @@ pipeline {
                         
                         // Deploy application
                         sh """
-                            ssh -o StrictHostKeyChecking=yes ${EC2_USER}@${EC2_HOST} 'bash -s' << 'ENDSSH'
+                            ssh -o StrictHostKeyChecking=yes ${EC2_USER}@${EC2_HOST} bash -s ${ECR_REGISTRY} ${IMAGE_TAG} ${MONITORING_HOST} ${AWS_REGION} ${APP_PORT} ${HEALTH_CHECK_TIMEOUT} ${HEALTH_CHECK_INTERVAL} << 'ENDSSH'
                                 cd ~/taskflow
                                 
-                                # Export environment variables
-                                export REGISTRY_URL="${ECR_REGISTRY}"
-                                export IMAGE_TAG="${IMAGE_TAG}"
-                                export MONITORING_HOST="${MONITORING_HOST}"
-                                export AWS_REGION="${AWS_REGION}"
+                                # Receive parameters
+                                REGISTRY_URL="\$1"
+                                IMAGE_TAG="\$2"
+                                MONITORING_HOST="\$3"
+                                AWS_REGION="\$4"
+                                APP_PORT="\$5"
+                                HEALTH_CHECK_TIMEOUT="\$6"
+                                HEALTH_CHECK_INTERVAL="\$7"
                                 
                                 # Login to ECR
-                                aws ecr get-login-password --region \$AWS_REGION | \
-                                docker login --username AWS --password-stdin \$REGISTRY_URL
+                                aws ecr get-login-password --region "\$AWS_REGION" | \
+                                docker login --username AWS --password-stdin "\$REGISTRY_URL"
                                 
                                 # Pull immutable build images
-                                docker pull \$REGISTRY_URL/taskflow-backend:\$IMAGE_TAG || exit 1
-                                docker pull \$REGISTRY_URL/taskflow-frontend:\$IMAGE_TAG || exit 1
+                                docker pull "\$REGISTRY_URL/taskflow-backend:\$IMAGE_TAG" || exit 1
+                                docker pull "\$REGISTRY_URL/taskflow-frontend:\$IMAGE_TAG" || exit 1
                                 
                                 # Start new containers
                                 docker-compose up -d --no-deps --build
                                 
                                 # Wait for backend health check
-                                MAX_ITERATIONS=$((${HEALTH_CHECK_TIMEOUT} / ${HEALTH_CHECK_INTERVAL}))
+                                MAX_ITERATIONS=\$((\$HEALTH_CHECK_TIMEOUT / \$HEALTH_CHECK_INTERVAL))
                                 for i in \$(seq 1 \$MAX_ITERATIONS); do
-                                    if curl -fsS http://localhost:${APP_PORT}/health >/dev/null 2>&1; then
+                                    if curl -fsS "http://localhost:\$APP_PORT/health" >/dev/null 2>&1; then
                                         echo "Backend is healthy"
                                         break
                                     fi
-                                    if [ "\$i" -eq \$MAX_ITERATIONS ]; then
+                                    if [ "\$i" -eq "\$MAX_ITERATIONS" ]; then
                                         echo "Health check timeout - rolling back"
                                         docker-compose logs taskflow-backend
                                         exit 1
                                     fi
-                                    sleep ${HEALTH_CHECK_INTERVAL}
+                                    sleep "\$HEALTH_CHECK_INTERVAL"
                                 done
                                 
                                 # Stop old containers
@@ -355,7 +358,7 @@ pipeline {
                                 
                                 # Verify final state
                                 docker-compose ps
-                                curl -f http://localhost:${APP_PORT}/health || exit 1
+                                curl -f "http://localhost:\$APP_PORT/health" || exit 1
                                 
                                 echo "Deployment successful!"
 ENDSSH

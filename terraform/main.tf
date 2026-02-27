@@ -35,18 +35,6 @@ module "compute" {
   app_iam_instance_profile = module.security.iam_instance_profile
 }
 
-module "deployment" {
-  source = "./modules/deployment"
-
-  app_instance_id       = module.compute.app_instance_id
-  app_public_ip         = module.compute.app_public_ip
-  monitoring_private_ip = module.monitoring.monitoring_private_ip
-  private_key_path      = var.private_key_path
-  docker_registry       = var.docker_registry
-  image_tag             = var.image_tag
-  aws_region            = var.aws_region
-}
-
 module "security" {
   source = "./modules/security"
 
