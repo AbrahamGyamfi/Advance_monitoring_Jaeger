@@ -9,6 +9,7 @@ pipeline {
         AWS_REGION = credentials('aws-region')
         AWS_ACCOUNT_ID = credentials('aws-account-id')
         APP_SERVER_IP = credentials('app-server-ip')
+        APP_PRIVATE_IP = '172.31.20.162'
         MONITORING_HOST = credentials('monitoring-host')
         ECR_REGISTRY = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
         AWS_CREDENTIALS_ID = 'aws-credentials'
@@ -182,22 +183,13 @@ pipeline {
         stage('Deploy to EC2') {
             steps {
                 script {
-                    echo '🚀 Deploying to EC2...'
-                    withCredentials([
-                        [$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"],
-                        sshUserPrivateKey(credentialsId: "${EC2_CREDENTIALS_ID}", keyFileVariable: 'SSH_KEY_FILE')
-                    ]) {
+                    echo '🚀 Deploying to EC2 via private IP...'
+                    withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"]]) {
                         sh """
-                            ssh -i "\${SSH_KEY_FILE}" -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} 'mkdir -p ~/${APP_NAME}'
-                        """
-                        sh """
-                            scp -i "\${SSH_KEY_FILE}" -o StrictHostKeyChecking=no docker-compose.prod.yml ${EC2_USER}@${EC2_HOST}:~/${APP_NAME}/docker-compose.yml
-                        """
-                        sh """
-                            aws ecr get-login-password --region ${AWS_REGION} | ssh -i "\${SSH_KEY_FILE}" -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} "docker login --username AWS --password-stdin ${ECR_REGISTRY}"
-                        """
-                        sh """
-                            ssh -i "\${SSH_KEY_FILE}" -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} '
+                            ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${EC2_USER}@${APP_PRIVATE_IP} 'mkdir -p ~/${APP_NAME}'
+                            scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no docker-compose.prod.yml ${EC2_USER}@${APP_PRIVATE_IP}:~/${APP_NAME}/docker-compose.yml
+                            aws ecr get-login-password --region ${AWS_REGION} | ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${EC2_USER}@${APP_PRIVATE_IP} "docker login --username AWS --password-stdin ${ECR_REGISTRY}"
+                            ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${EC2_USER}@${APP_PRIVATE_IP} '
                                 cd ~/${APP_NAME}
                                 docker pull ${BACKEND_IMAGE}:${IMAGE_TAG}
                                 docker pull ${FRONTEND_IMAGE}:${IMAGE_TAG}
@@ -206,7 +198,6 @@ pipeline {
                                 export IMAGE_TAG=${IMAGE_TAG}
                                 docker-compose up -d
                                 sleep 10
-                                docker-compose ps
                                 curl -f http://localhost:${APP_PORT}/health || exit 1
                                 echo "✅ Deployment successful!"
                             '
@@ -220,15 +211,12 @@ pipeline {
             steps {
                 script {
                     echo '🏥 Running health checks...'
-                    def healthStatus
-                    withCredentials([sshUserPrivateKey(credentialsId: "${EC2_CREDENTIALS_ID}", keyFileVariable: 'SSH_KEY_FILE')]) {
-                        healthStatus = sh(
-                            script: """
-                                ssh -i "\${SSH_KEY_FILE}" -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} 'curl -s http://localhost:${APP_PORT}/health | grep healthy'
-                            """,
-                            returnStatus: true
-                        )
-                    }
+                    def healthStatus = sh(
+                        script: """
+                            ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${EC2_USER}@${APP_PRIVATE_IP} 'curl -s http://localhost:${APP_PORT}/health | grep healthy'
+                        """,
+                        returnStatus: true
+                    )
                     if (healthStatus == 0) {
                         echo "✅ Application is healthy!"
                     } else {

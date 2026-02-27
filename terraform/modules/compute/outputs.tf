@@ -18,6 +18,11 @@ output "app_public_ip" {
   value       = aws_instance.app.public_ip
 }
 
+output "app_private_ip" {
+  description = "App private IP"
+  value       = aws_instance.app.private_ip
+}
+
 output "ami_id" {
   description = "AMI ID used for instances"
   value       = data.aws_ami.amazon_linux_2.id
