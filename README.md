@@ -131,12 +131,12 @@ sudo cat /var/lib/jenkins/secrets/initialAdminPassword
 ```
 
 ### 4. Access Services
-- **Application**: http://APP_IP
-- **Grafana**: http://APP_IP:3000 (admin / see monitoring/.env)
-- **Prometheus**: http://APP_IP:9090
-- **Jaeger**: http://APP_IP:16686
-- **Alertmanager**: http://APP_IP:9093
-- **Jenkins**: http://JENKINS_IP:8080
+- **Application**: http://<APP_SERVER_IP>
+- **Grafana**: http://<APP_SERVER_IP>:3000 (admin / see monitoring/.env)
+- **Prometheus**: http://<APP_SERVER_IP>:9090
+- **Jaeger**: http://<APP_SERVER_IP>:16686
+- **Alertmanager**: http://<APP_SERVER_IP>:9093
+- **Jenkins**: http://<JENKINS_SERVER_IP>:8080
 
 ## Terraform Infrastructure
 
@@ -166,8 +166,8 @@ terraform/
 
 ### Infrastructure Monitoring
 
-![Infrastructure Dashboard](Screenshots/Grafana_dashboard.png)
-*System metrics: CPU, memory, disk I/O, and network utilization*
+![Infrastructure Dashboard](Screenshots/Grafana_taskflow_dashboard.png)
+*Grafana dashboard showing application and system metrics*
 
 ### Metrics Exposed
 
@@ -193,8 +193,11 @@ The backend exports OpenTelemetry traces and RED metrics:
 
 ### Alerts Configured
 
-![Alert Rules](./monitoring/config/alert_rules.yml)
-*Configured alert rules in Prometheus*
+![Prometheus Alerts](Screenshots/prometheus-alert-firing.png)
+*Prometheus alert rules firing for high error rate and latency*
+
+![Grafana Alerts](Screenshots/Grafana-alert-firing.png)
+*Grafana visualization of active alerts*
 
 | Alert | Condition | Duration | Severity |
 |-------|-----------|----------|----------|
@@ -230,8 +233,11 @@ histogram_quantile(0.95, sum(rate(taskflow_http_request_duration_seconds_bucket{
 
 ### CloudWatch Logs
 
-![CloudWatch Logs](/Screenshots/Cloudwatch-logs.png)
+![CloudWatch Logs](Screenshots/Cloudwatch-logs.png)
 *Docker container logs streaming to CloudWatch*
+
+![CloudWatch Log Streams](Screenshots/cloudwatch-logs2.png)
+*CloudWatch log groups and streams for TaskFlow application*
 
 - **Log Group**: `/aws/taskflow/docker`
 - **Retention**: 7 days
@@ -252,17 +258,16 @@ histogram_quantile(0.95, sum(rate(taskflow_http_request_duration_seconds_bucket{
 
 ### GuardDuty
 
-![GuardDuty Dashboard](/Screenshots/GuardDutyFinding.png)
-*GuardDuty threat detection enabled*
+![GuardDuty Dashboard](Screenshots/GuardDutyFinding.png)
+*GuardDuty threat detection findings*
 
-- **Detector ID**: `8eccab93586c4b21dc5166f92a396f54`
 - **Status**: Enabled and monitoring
 - **Coverage**: VPC Flow Logs, CloudTrail events, DNS logs
 - **Findings**: Real-time threat detection and alerts
 
 ## CI/CD Pipeline
 
-![Jenkins Pipeline](/Screenshots/pipeline-success.png)
+![Jenkins Pipeline](Screenshots/Pipeline_success.png)
 *Jenkins CI/CD pipeline with 8 automated stages*
 
 ### Jenkins Pipeline Stages
@@ -317,17 +322,17 @@ histogram_quantile(0.95, sum(rate(taskflow_http_request_duration_seconds_bucket{
 
 ### Test Metrics Endpoint
 ```bash
-curl http://APP_IP:5000/metrics
+curl http://<APP_SERVER_IP>:5000/metrics
 ```
 
 ### Validate Observability Stack
 ```bash
 ./monitoring/validate-observability.sh \
-  --app-url http://APP_IP:5000 \
-  --prom-url http://APP_IP:9090 \
-  --alert-url http://APP_IP:9093 \
-  --jaeger-url http://APP_IP:16686 \
-  --loki-url http://APP_IP:3100 \
+  --app-url http://<APP_SERVER_IP>:5000 \
+  --prom-url http://<APP_SERVER_IP>:9090 \
+  --alert-url http://<APP_SERVER_IP>:9093 \
+  --jaeger-url http://<APP_SERVER_IP>:16686 \
+  --loki-url http://<APP_SERVER_IP>:3100 \
   --duration-minutes 12
 ```
 
@@ -351,7 +356,7 @@ aws cloudtrail lookup-events --max-results 10
 ### Check GuardDuty
 ```bash
 aws guardduty list-detectors
-aws guardduty list-findings --detector-id DETECTOR_ID
+aws guardduty list-findings --detector-id <DETECTOR_ID>
 ```
 
 ## Cleanup
@@ -455,14 +460,14 @@ Monthly AWS costs (approximate):
 ### Grafana
 Password is auto-generated during deployment:
 ```bash
-ssh -i ~/.ssh/id_rsa ec2-user@APP_IP
+ssh -i ~/.ssh/id_rsa ec2-user@<APP_SERVER_IP>
 cat ~/monitoring/.env | grep GF_SECURITY_ADMIN_PASSWORD
 ```
 
 ### Jenkins
 Initial admin password:
 ```bash
-ssh -i ~/.ssh/id_rsa ec2-user@JENKINS_IP
+ssh -i ~/.ssh/id_rsa ec2-user@<JENKINS_SERVER_IP>
 sudo cat /var/lib/jenkins/secrets/initialAdminPassword
 ```
 
@@ -478,15 +483,15 @@ sudo cat /var/lib/jenkins/secrets/initialAdminPassword
 
 ### Prometheus Not Scraping
 ```bash
-# Check connectivity from monitoring server
-ssh -i ~/.ssh/id_rsa ec2-user@MONITORING_IP
-curl http://APP_IP:5000/metrics
+# Check connectivity from app server
+ssh -i ~/.ssh/id_rsa ec2-user@<APP_SERVER_IP>
+curl http://localhost:9090/-/healthy
 ```
 
 ### App Not Running
 ```bash
 # Check containers on app server
-ssh -i ~/.ssh/id_rsa ec2-user@APP_IP
+ssh -i ~/.ssh/id_rsa ec2-user@<APP_SERVER_IP>
 docker ps
 docker logs taskflow-backend-prod
 ```
@@ -494,7 +499,7 @@ docker logs taskflow-backend-prod
 ### CloudWatch Logs Missing
 ```bash
 # Verify IAM role attached
-aws ec2 describe-instances --instance-ids INSTANCE_ID \
+aws ec2 describe-instances --instance-ids <INSTANCE_ID> \
   --query 'Reservations[0].Instances[0].IamInstanceProfile'
 ```
 
@@ -522,26 +527,6 @@ aws ec2 describe-instances --instance-ids INSTANCE_ID \
 
 This is an educational project demonstrating DevOps best practices. Feel free to fork and adapt for your learning purposes.
 
-## License
-
-MIT License - Educational Project
-
-## Author
-
-**Abraham Gyamfi**  
-DevOps Engineer | Cloud Infrastructure Specialist
-
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-blue?style=flat&logo=linkedin)](https://linkedin.com/in/yourprofile)
-[![GitHub](https://img.shields.io/badge/GitHub-Follow-black?style=flat&logo=github)](https://github.com/AbrahamGyamfi)
 
 ---
 
-<div align="center">
-
-### If you found this project helpful, please consider giving it a star!
-
-**Version**: 2.0.0 | **Last Updated**: February 2026
-
-[Back to Top](#taskflow---enterprise-observability--security-stack)
-
-</div>
