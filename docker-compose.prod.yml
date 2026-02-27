@@ -49,6 +49,19 @@ services:
     networks:
       - taskflow-network
 
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: node-exporter
+    ports:
+      - "9100:9100"
+    restart: always
+    command:
+      - '--path.rootfs=/host'
+    volumes:
+      - '/:/host:ro,rslave'
+    networks:
+      - taskflow-network
+
 networks:
   taskflow-network:
     driver: bridge

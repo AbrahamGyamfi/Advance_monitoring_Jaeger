@@ -52,7 +52,7 @@ resource "null_resource" "deploy_monitoring" {
       "set -e",
       "sudo cloud-init status --wait || true",
       "cd /home/ec2-user/monitoring",
-      "sed -i 's/APP_SERVER_IP/${var.app_public_ip}/g' config/prometheus.yml",
+      "sed -i 's/$${APP_PRIVATE_IP}/${var.app_private_ip}/g' config/prometheus.yml",
       "if [ ! -f .env ]; then echo \"GF_SECURITY_ADMIN_PASSWORD=$(openssl rand -base64 32 | tr -d '\\n')\" > .env; chmod 600 .env; fi",
       "sudo systemctl is-active --quiet docker || sudo systemctl start docker",
       "sudo /usr/local/bin/docker-compose --env-file .env up -d",

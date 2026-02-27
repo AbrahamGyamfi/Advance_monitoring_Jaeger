@@ -50,5 +50,6 @@ module "monitoring" {
   iam_instance_profile = module.security.iam_instance_profile
   aws_region           = var.aws_region
   app_public_ip        = module.compute.app_public_ip
+  app_private_ip       = module.compute.app_private_ip
   private_key_path     = var.private_key_path
 }

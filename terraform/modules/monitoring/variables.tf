@@ -40,6 +40,11 @@ variable "app_public_ip" {
   type        = string
 }
 
+variable "app_private_ip" {
+  description = "Application server private IP"
+  type        = string
+}
+
 variable "private_key_path" {
   description = "Path to SSH private key"
   type        = string

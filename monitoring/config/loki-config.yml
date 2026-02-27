@@ -21,12 +21,11 @@ schema_config:
         period: 24h
 
 storage_config:
-  filesystem:
-    chunks_directory: /loki/chunks
-    rules_directory: /loki/rules
   tsdb_shipper:
     active_index_directory: /loki/index
     cache_location: /loki/index_cache
+  filesystem:
+    directory: /loki/chunks
 
 limits_config:
   retention_period: 168h
