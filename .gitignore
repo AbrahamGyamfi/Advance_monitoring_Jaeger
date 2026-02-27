@@ -1,29 +1,44 @@
-# Node artifacts
-**/node_modules/
-**/coverage/
-**/build/
-**/test-results/
-npm-debug.log*
+# Terraform
+*.tfstate
+*.tfstate.*
+*.tfvars
+.terraform/
+.terraform.lock.hcl
+tfplan
 
-# Environment and secrets
-.env
-.env.*
-!.env.example
+# SSH Keys
 *.pem
 *.key
+id_rsa*
 
-# Terraform artifacts
-terraform/.terraform/
-terraform/*.tfstate
-terraform/*.tfstate.*
-terraform/tfplan
-terraform/terraform.tfvars
+# Credentials & Sensitive Files
+CREDENTIALS.md
+ACCESS_GUIDE.md
+JENKINS_SETUP.md
+*credentials*.sh
+*jenkins*.sh
 
-# Monitoring generated config
-monitoring/config/prometheus-configured.yml
+# Logs
+*.log
+deployment.log
 
-# OS/editor
-.DS_Store
-.idea/
+# Node modules
+node_modules/
+coverage/
+test-results/
+
+# Environment
+.env
+*.env
+
+# IDE
 .vscode/
-*.swp
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary
+/tmp/
+*.tmp

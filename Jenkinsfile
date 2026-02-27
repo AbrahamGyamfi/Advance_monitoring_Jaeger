@@ -9,7 +9,7 @@ pipeline {
         AWS_REGION = credentials('aws-region')
         AWS_ACCOUNT_ID = credentials('aws-account-id')
         APP_SERVER_IP = credentials('app-server-ip')
-        APP_PRIVATE_IP = '172.31.20.162'
+        APP_PRIVATE_IP = credentials('app-private-ip')
         MONITORING_HOST = credentials('monitoring-host')
         ECR_REGISTRY = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
         AWS_CREDENTIALS_ID = 'aws-credentials'
@@ -233,9 +233,34 @@ pipeline {
             script {
                 echo '🧹 Cleaning up...'
                 sh """
+                    # Remove test containers
                     docker rm -f test-backend-${BUILD_NUMBER} 2>/dev/null || true
-                    docker image prune -f
+                    
+                    # Remove stopped containers
                     docker container prune -f
+                    
+                    # Remove dangling images
+                    docker image prune -f
+                    
+                    # Remove unused images (not just dangling)
+                    docker image prune -a -f --filter "until=24h"
+                    
+                    # Remove build cache
+                    docker builder prune -f --filter "until=24h"
+                    
+                    # Remove unused volumes
+                    docker volume prune -f
+                    
+                    # Remove unused networks
+                    docker network prune -f
+                    
+                    # Clean workspace node_modules
+                    rm -rf backend/node_modules frontend/node_modules || true
+                    
+                    # Show disk usage after cleanup
+                    echo "📊 Disk usage after cleanup:"
+                    df -h /var/lib/docker 2>/dev/null || df -h /
+                    docker system df
                 """
             }
         }

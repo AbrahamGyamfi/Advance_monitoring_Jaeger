@@ -2,120 +2,127 @@
 
 ## Programming Languages
 
-### Backend
-- **Node.js**: v18.x (LTS)
-- **JavaScript**: ES6+ with async/await patterns
+### JavaScript/Node.js
+- **Backend**: Node.js 18 (LTS)
+- **Frontend**: React 18.2.0
+- **Runtime**: Node.js Alpine Linux containers for production
 
-### Frontend
-- **JavaScript**: ES6+ with JSX
-- **React**: 18.2.0
-- **CSS3**: Modern styling with flexbox/grid
-
-### Infrastructure
-- **HCL**: Terraform configuration language
-- **Shell Script**: Bash for automation and userdata scripts
-
-## Core Dependencies
-
-### Backend (`backend/package.json`)
-```json
-{
-  "dependencies": {
-    "@opentelemetry/api": "^1.9.0",
-    "@opentelemetry/auto-instrumentations-node": "^0.53.0",
-    "@opentelemetry/exporter-trace-otlp-http": "^0.53.0",
-    "@opentelemetry/resources": "^1.26.0",
-    "@opentelemetry/sdk-node": "^0.53.0",
-    "@opentelemetry/semantic-conventions": "^1.26.0",
-    "cors": "^2.8.5",
-    "express": "^4.18.2",
-    "prom-client": "^15.1.3",
-    "uuid": "^9.0.0"
-  },
-  "devDependencies": {
-    "eslint": "^8.40.0",
-    "jest": "^29.5.0",
-    "jest-junit": "^16.0.0",
-    "nodemon": "^2.0.22",
-    "prettier": "^2.8.8",
-    "supertest": "^6.3.3"
-  }
-}
-```
-
-### Frontend (`frontend/package.json`)
-```json
-{
-  "dependencies": {
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "react-scripts": "5.0.1"
-  }
-}
-```
-
-## Infrastructure Tools
-
-### Terraform
+### Infrastructure as Code
+- **Terraform**: HCL (HashiCorp Configuration Language)
 - **Version**: >= 1.0
-- **AWS Provider**: ~> 5.0
-- **Null Provider**: ~> 3.0
+- **Provider**: AWS ~> 5.0
 
-### AWS Services
-- **EC2**: t3.micro (App, Jenkins), t3.small (Monitoring)
-- **ECR**: Docker image registry
-- **S3**: CloudTrail log storage with encryption
-- **IAM**: Roles and instance profiles
-- **CloudWatch Logs**: Container log aggregation
-- **CloudTrail**: API audit logging
-- **GuardDuty**: Threat detection
+### Configuration
+- **YAML**: Prometheus, Grafana, Docker Compose, Alert rules
+- **JSON**: Grafana dashboards, package manifests
+- **Shell**: Bash scripts for automation
 
-### Containerization
-- **Docker**: Multi-stage builds
-- **Docker Compose**: v3.8 for service orchestration
-- **Base Images**: 
-  - `node:18-alpine` (backend build/test)
-  - `nginx:alpine` (frontend serving)
+## Backend Technology Stack
 
-## Observability Stack
+### Core Framework
+- **Express.js**: 4.18.2 - Web application framework
+- **CORS**: 2.8.5 - Cross-origin resource sharing
 
-### Monitoring Services
-- **Prometheus**: v2.x - Metrics collection and storage
-- **Grafana**: v10.x - Visualization and dashboards
-- **Alertmanager**: v0.26.x - Alert routing and management
-- **Node Exporter**: v1.x - System metrics collection
-- **Loki**: v2.x - Log aggregation
-- **Promtail**: v2.x - Log shipping agent
-- **Jaeger**: v1.x - Distributed tracing backend
+### Observability Libraries
+- **prom-client**: 15.1.3 - Prometheus metrics client
+- **@opentelemetry/sdk-node**: 0.53.0 - OpenTelemetry SDK
+- **@opentelemetry/auto-instrumentations-node**: 0.53.0 - Auto-instrumentation
+- **@opentelemetry/exporter-trace-otlp-http**: 0.53.0 - OTLP trace exporter
+- **@opentelemetry/resources**: 1.26.0 - Resource definitions
+- **@opentelemetry/semantic-conventions**: 1.26.0 - Semantic conventions
 
-### Instrumentation Libraries
-- **prom-client**: Prometheus metrics for Node.js
-- **OpenTelemetry SDK**: Distributed tracing instrumentation
-- **OpenTelemetry Auto-Instrumentation**: Automatic HTTP span creation
+### Utilities
+- **uuid**: 9.0.0 - Unique identifier generation
 
-## CI/CD Tools
+### Development Tools
+- **Jest**: 29.5.0 - Testing framework
+- **Supertest**: 6.3.3 - HTTP assertion library
+- **ESLint**: 8.40.0 - Code linting
+- **Prettier**: 2.8.8 - Code formatting
+- **Nodemon**: 2.0.22 - Development server with hot reload
+- **jest-junit**: 16.0.0 - JUnit XML reporter
 
-### Jenkins
-- **Version**: Latest LTS
-- **Plugins**: Git, Pipeline, AWS, Docker
-- **Pipeline**: Declarative syntax with Groovy
+## Frontend Technology Stack
+
+### Core Framework
+- **React**: 18.2.0 - UI library
+- **React DOM**: 18.2.0 - React rendering
+- **react-scripts**: 5.0.1 - Create React App tooling
 
 ### Build Tools
-- **npm**: Package management and script execution
-- **Docker CLI**: Image building and container management
-- **AWS CLI**: ECR authentication and AWS service interaction
+- **Webpack**: (via react-scripts) - Module bundler
+- **Babel**: (via react-scripts) - JavaScript transpiler
+
+### Testing
+- **React Testing Library**: (via react-scripts) - Component testing
+- **Jest**: (via react-scripts) - Test runner
+
+## Infrastructure & DevOps
+
+### Container Platform
+- **Docker**: Multi-stage builds
+- **Docker Compose**: 3.8 specification
+- **Base Images**:
+  - `node:18-alpine` - Backend runtime
+  - `nginx:alpine` - Frontend web server
+
+### Cloud Platform (AWS)
+- **Compute**: EC2 (t3.micro, t3.small)
+- **Container Registry**: ECR
+- **Storage**: S3 (CloudTrail logs)
+- **Identity**: IAM (roles, instance profiles)
+- **Logging**: CloudWatch Logs
+- **Audit**: CloudTrail
+- **Security**: GuardDuty
+
+### CI/CD
+- **Jenkins**: Declarative pipeline
+- **Git**: Version control
+- **GitHub**: Repository hosting with webhook triggers
+
+### Infrastructure as Code
+- **Terraform**: 1.0+
+- **Modules**: Custom modular architecture
+  - networking
+  - compute
+  - deployment
+  - monitoring
+  - security
+
+## Monitoring & Observability Stack
+
+### Metrics
+- **Prometheus**: 2.x - Time-series database
+- **Node Exporter**: System metrics collector
+- **Grafana**: 10.x - Visualization platform
+
+### Tracing
+- **Jaeger**: Distributed tracing backend
+- **OpenTelemetry**: Instrumentation standard
+
+### Logging
+- **Loki**: Log aggregation system
+- **Promtail**: Log shipping agent
+
+### Alerting
+- **Alertmanager**: Alert routing and management
 
 ## Development Commands
 
 ### Backend Development
+
 ```bash
 # Install dependencies
-npm ci
+cd backend
+npm install
 
-# Start development server with hot reload
+# Run development server (with hot reload)
 npm run dev
 
-# Run unit tests with coverage
+# Run production server
+npm start
+
+# Run tests with coverage
 npm test
 
 # Run tests in watch mode
@@ -127,33 +134,48 @@ npm run lint
 # Format code
 npm run format
 
-# Start production server
-npm start
+# Build Docker image
+docker build -t taskflow-backend .
+
+# Run in container
+docker run -p 5000:5000 taskflow-backend
 ```
 
 ### Frontend Development
+
 ```bash
 # Install dependencies
-npm ci
+cd frontend
+npm install
 
-# Start development server (port 3000)
+# Run development server (port 3000)
 npm start
 
 # Build production bundle
-npm build
+npm run build
 
-# Run unit tests
+# Run tests
 npm test
 
 # Run tests in watch mode
 npm run test:watch
+
+# Build Docker image
+docker build -t taskflow-frontend .
+
+# Run in container
+docker run -p 80:80 taskflow-frontend
 ```
 
 ### Infrastructure Management
+
 ```bash
 # Initialize Terraform
 cd terraform
 terraform init
+
+# Validate configuration
+terraform validate
 
 # Plan infrastructure changes
 terraform plan
@@ -167,165 +189,184 @@ terraform destroy
 # Format Terraform files
 terraform fmt -recursive
 
-# Validate configuration
-terraform validate
+# Show current state
+terraform show
+
+# List resources
+terraform state list
+
+# Output values
+terraform output
 ```
 
-### Docker Operations
+### Docker Compose Operations
+
 ```bash
-# Build backend image
-docker build -t taskflow-backend:latest ./backend
-
-# Build frontend image
-docker build -t taskflow-frontend:latest ./frontend
-
-# Run backend locally
-docker run -p 5000:5000 taskflow-backend:latest
-
-# Run frontend locally
-docker run -p 80:80 taskflow-frontend:latest
-
-# Production deployment
+# Start production stack
 docker-compose -f docker-compose.prod.yml up -d
+
+# Stop stack
+docker-compose -f docker-compose.prod.yml down
 
 # View logs
 docker-compose -f docker-compose.prod.yml logs -f
 
-# Stop services
-docker-compose -f docker-compose.prod.yml down
-```
+# Rebuild and restart
+docker-compose -f docker-compose.prod.yml up -d --build
 
-### Monitoring Stack
-```bash
-# Deploy monitoring stack
+# Start monitoring stack
 cd monitoring
 docker-compose up -d
 
-# View logs
-docker-compose logs -f
-
-# Restart services
-docker-compose restart
-
-# Stop monitoring
-docker-compose down
+# View monitoring logs
+docker-compose logs -f prometheus grafana
 ```
 
-## Testing Frameworks
+### Testing & Verification
 
-### Backend Testing
-- **Jest**: Unit testing framework
-- **Supertest**: HTTP assertion library
-- **jest-junit**: JUnit XML reporter for CI integration
+```bash
+# Deploy and verify entire stack
+./deploy-and-verify.sh
 
-### Frontend Testing
-- **React Testing Library**: Component testing
-- **Jest**: Test runner (via react-scripts)
-- **@testing-library/jest-dom**: Custom matchers
+# Validate observability stack
+cd monitoring
+./validate-observability.sh \
+  --app-url http://APP_IP:5000 \
+  --prom-url http://MONITORING_IP:9090 \
+  --alert-url http://MONITORING_IP:9093 \
+  --jaeger-url http://MONITORING_IP:16686 \
+  --loki-url http://MONITORING_IP:3100 \
+  --duration-minutes 12
 
-## Code Quality Tools
+# Load testing
+./load-test.sh
 
-### Linting
-- **ESLint**: JavaScript linting with custom rules
-- **eslint-config-react-app**: React-specific linting rules
+# Check metrics endpoint
+curl http://localhost:5000/metrics
 
-### Formatting
-- **Prettier**: Code formatting
+# Check health endpoint
+curl http://localhost:5000/health
+
+# Check CloudWatch logs
+aws logs tail /aws/taskflow/docker --follow
+
+# Check CloudTrail events
+aws cloudtrail lookup-events --max-results 10
+
+# Check GuardDuty findings
+aws guardduty list-detectors
+aws guardduty list-findings --detector-id DETECTOR_ID
+```
+
+### Cleanup
+
+```bash
+# Automated cleanup
+./cleanup.sh
+
+# Manual Jenkins cleanup
+./jenkins-cleanup.sh
+
+# Terraform cleanup
+cd terraform
+terraform destroy -auto-approve
+```
 
 ## Build Systems
 
 ### Backend Build
-- Multi-stage Dockerfile
-- Stage 1: Dependencies installation
-- Stage 2: Production runtime with minimal footprint
+- **Package Manager**: npm
+- **Test Runner**: Jest with coverage reporting
+- **Linter**: ESLint with standard configuration
+- **Formatter**: Prettier
+- **Docker**: Multi-stage build with Alpine base
 
 ### Frontend Build
-- Multi-stage Dockerfile
-- Stage 1: Node.js build (npm run build)
-- Stage 2: Nginx serving static files
+- **Package Manager**: npm
+- **Build Tool**: react-scripts (Webpack + Babel)
+- **Test Runner**: Jest + React Testing Library
+- **Docker**: Multi-stage build (Node build → Nginx serve)
 
-### CI/CD Build
-- Jenkins declarative pipeline
-- Parallel execution for backend/frontend
-- Containerized testing (no agent dependencies)
-- Docker layer caching for faster builds
-
-## Environment Configuration
-
-### Backend Environment Variables
-```bash
-PORT=5000
-NODE_ENV=production
-OTEL_EXPORTER_OTLP_ENDPOINT=http://monitoring-host:4318
-OTEL_SERVICE_NAME=taskflow-backend
-```
-
-### Frontend Environment Variables
-```bash
-REACT_APP_API_URL=http://app-server-ip:5000
-```
-
-### Terraform Variables
-```hcl
-aws_region              = "us-east-1"
-jenkins_instance_type   = "t3.micro"
-app_instance_type       = "t3.micro"
-monitoring_instance_type = "t3.small"
-key_name                = "taskflow-key"
-public_key_path         = "~/.ssh/id_rsa.pub"
-private_key_path        = "~/.ssh/id_rsa"
-admin_cidr_blocks       = ["YOUR_IP/32"]
-cloudtrail_bucket_name  = "taskflow-cloudtrail-logs"
-```
-
-## Version Requirements
-
-### Minimum Versions
-- Node.js: >= 18.0.0
-- npm: >= 9.0.0
-- Docker: >= 20.10.0
-- Docker Compose: >= 2.0.0
-- Terraform: >= 1.0.0
-- AWS CLI: >= 2.0.0
-
-### Recommended Versions
-- Node.js: 18.x LTS
-- Docker: Latest stable
-- Terraform: Latest 1.x
-- AWS CLI: Latest v2
+### Infrastructure Build
+- **Provisioning**: Terraform with modular architecture
+- **Validation**: terraform validate, terraform plan
+- **State Management**: Local state files (terraform.tfstate)
 
 ## Port Allocations
 
 ### Application Ports
-- `5000`: Backend API
-- `80`: Frontend (production)
-- `3000`: Frontend (development)
+- **5000**: Backend API
+- **80**: Frontend web server
+- **3000**: React development server
 
 ### Monitoring Ports
-- `9090`: Prometheus
-- `3000`: Grafana
-- `9093`: Alertmanager
-- `9100`: Node Exporter
-- `3100`: Loki
-- `9080`: Promtail
-- `16686`: Jaeger UI
-- `4318`: Jaeger OTLP HTTP
+- **9090**: Prometheus
+- **3000**: Grafana
+- **9093**: Alertmanager
+- **9100**: Node Exporter
+- **16686**: Jaeger UI
+- **3100**: Loki
 
-### Infrastructure Ports
-- `8080`: Jenkins
-- `22`: SSH
+### CI/CD Ports
+- **8080**: Jenkins
 
-## AWS Resource Naming
+### System Ports
+- **22**: SSH
 
-### Naming Convention
-- Pattern: `taskflow-{resource-type}-{environment}`
-- Example: `taskflow-sg`, `taskflow-trail`, `taskflow-cloudtrail-logs`
+## Environment Requirements
 
-### Resource Tags
-```hcl
-tags = {
-  Project     = "TaskFlow"
-  Environment = "Production"
-  ManagedBy   = "Terraform"
-}
-```
+### Development
+- Node.js 18+
+- Docker 20+
+- Docker Compose 2+
+- Git 2+
+- AWS CLI 2+
+- Terraform 1.0+
+
+### Production
+- AWS Account with appropriate permissions
+- SSH key pair (~/.ssh/id_rsa)
+- Terraform variables configured (terraform.tfvars)
+- Jenkins credentials configured
+- Admin CIDR blocks for security group access
+
+## Testing Frameworks
+
+### Backend Testing
+- **Jest**: Unit test framework
+- **Supertest**: HTTP endpoint testing
+- **Coverage**: Collected for app.js, server.js, metrics.js, logger.js, telemetry.js
+- **Reporter**: jest-junit for CI integration
+
+### Frontend Testing
+- **Jest**: Test runner
+- **React Testing Library**: Component testing
+- **CI Mode**: Runs without watch mode
+
+### Integration Testing
+- **Containerized**: Tests run in Docker containers
+- **Health Checks**: Automated endpoint verification
+- **Load Testing**: Custom bash scripts for stress testing
+
+## Version Control
+
+### Git Configuration
+- **Repository**: GitHub
+- **Branching**: Main branch for production
+- **Webhooks**: Jenkins integration for CI/CD triggers
+- **Ignored Files**: node_modules, coverage, .terraform, *.tfstate, *.pem
+
+## Dependency Management
+
+### Backend Dependencies
+- **Production**: 10 packages (Express, OpenTelemetry, prom-client, etc.)
+- **Development**: 6 packages (Jest, ESLint, Supertest, etc.)
+- **Lock File**: package-lock.json for reproducible builds
+
+### Frontend Dependencies
+- **Production**: 3 packages (React, React DOM, react-scripts)
+- **Lock File**: package-lock.json for reproducible builds
+
+### Infrastructure Dependencies
+- **Providers**: AWS, Null
+- **Lock File**: .terraform.lock.hcl for provider versions

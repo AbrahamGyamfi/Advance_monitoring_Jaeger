@@ -1,0 +1,137 @@
+jenkins:
+  systemMessage: "TaskFlow CI/CD - Fully Automated Configuration"
+  numExecutors: 2
+  mode: NORMAL
+  
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "admin"
+          password: "${JENKINS_ADMIN_PASSWORD}"
+          
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+
+  remotingSecurity:
+    enabled: true
+
+  crumbIssuer:
+    standard:
+      excludeClientIPFromCrumb: false
+
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          - string:
+              scope: GLOBAL
+              id: "aws-region"
+              secret: "${AWS_REGION}"
+              description: "AWS Region"
+          - string:
+              scope: GLOBAL
+              id: "aws-account-id"
+              secret: "${AWS_ACCOUNT_ID}"
+              description: "AWS Account ID"
+          - string:
+              scope: GLOBAL
+              id: "app-server-ip"
+              secret: "${APP_SERVER_IP}"
+              description: "App Server Public IP"
+          - string:
+              scope: GLOBAL
+              id: "app-private-ip"
+              secret: "${APP_PRIVATE_IP}"
+              description: "App Server Private IP"
+          - string:
+              scope: GLOBAL
+              id: "monitoring-host"
+              secret: "${MONITORING_HOST}"
+              description: "Monitoring Server IP"
+          - string:
+              scope: GLOBAL
+              id: "app-name"
+              secret: "taskflow"
+              description: "Application Name"
+          - string:
+              scope: GLOBAL
+              id: "node-version"
+              secret: "18"
+              description: "Node.js Version"
+          - string:
+              scope: GLOBAL
+              id: "app-port"
+              secret: "5000"
+              description: "Application Port"
+          - string:
+              scope: GLOBAL
+              id: "integration-test-port"
+              secret: "5001"
+              description: "Integration Test Port"
+          - string:
+              scope: GLOBAL
+              id: "health-check-timeout"
+              secret: "60"
+              description: "Health Check Timeout (seconds)"
+          - string:
+              scope: GLOBAL
+              id: "health-check-interval"
+              secret: "5"
+              description: "Health Check Interval (seconds)"
+          - string:
+              scope: GLOBAL
+              id: "ec2-user"
+              secret: "ec2-user"
+              description: "EC2 SSH Username"
+          - aws:
+              scope: GLOBAL
+              id: "aws-credentials"
+              accessKey: "${AWS_ACCESS_KEY_ID}"
+              secretKey: "${AWS_SECRET_ACCESS_KEY}"
+              description: "AWS Credentials for ECR"
+          - basicSSHUserPrivateKey:
+              scope: GLOBAL
+              id: "app-server-ssh"
+              username: "ec2-user"
+              description: "SSH Key for App Server"
+              privateKeySource:
+                directEntry:
+                  privateKey: "${SSH_PRIVATE_KEY}"
+
+unclassified:
+  location:
+    url: "http://${JENKINS_HOST}:8080/"
+    adminAddress: "admin@taskflow.local"
+  
+  gitHubPluginConfig:
+    hookUrl: "http://${JENKINS_HOST}:8080/github-webhook/"
+
+jobs:
+  - script: >
+      pipelineJob('taskflow-pipeline') {
+        description('TaskFlow CI/CD Pipeline - Automated Build, Test, and Deploy')
+        
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote {
+                  url('${GITHUB_REPO_URL}')
+                }
+                branch('*/main')
+              }
+            }
+            scriptPath('Jenkinsfile')
+          }
+        }
+        
+        triggers {
+          githubPush()
+        }
+        
+        properties {
+          disableConcurrentBuilds()
+        }
+      }
