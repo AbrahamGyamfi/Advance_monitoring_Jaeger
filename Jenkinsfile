@@ -141,6 +141,18 @@ pipeline {
                         }
                     }
                 }
+                stage('Frontend Lint') {
+                    steps {
+                        script {
+                            echo 'Running frontend linting...'
+                            dir('frontend') {
+                                sh """
+                                    docker run --rm -v \$(pwd):/app -w /app node:${NODE_VERSION}-alpine sh -c 'npm ci --legacy-peer-deps && npm run lint'
+                                """
+                            }
+                        }
+                    }
+                }
                 stage('Test Images') {
                     steps {
                         script {

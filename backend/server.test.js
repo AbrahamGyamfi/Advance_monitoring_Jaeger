@@ -147,4 +147,95 @@ describe('TaskFlow API Tests', () => {
       expect(metricsRes.text).toContain('taskflow_tasks_total');
     });
   });
+
+  describe('Error Handling', () => {
+    it('should return 404 for unknown routes', async () => {
+      const res = await request(app).get('/api/unknown');
+      expect(res.statusCode).toBe(404);
+    });
+
+    it('should handle malformed JSON', async () => {
+      const res = await request(app)
+        .post('/api/tasks')
+        .set('Content-Type', 'application/json')
+        .send('invalid json');
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('should return 404 for updating non-existent task', async () => {
+      const res = await request(app)
+        .put('/api/tasks/non-existent-id')
+        .send({ title: 'Updated' });
+      expect(res.statusCode).toBe(404);
+    });
+
+    it('should return 404 for patching non-existent task', async () => {
+      const res = await request(app)
+        .patch('/api/tasks/non-existent-id')
+        .send({ completed: true });
+      expect(res.statusCode).toBe(404);
+    });
+  });
+
+  describe('CORS', () => {
+    it('should have CORS headers', async () => {
+      const res = await request(app).get('/health');
+      expect(res.headers['access-control-allow-origin']).toBeDefined();
+    });
+  });
+
+  describe('Task Validation', () => {
+    it('should reject task with missing title', async () => {
+      const res = await request(app).post('/api/tasks').send({});
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('should trim whitespace from title', async () => {
+      const res = await request(app)
+        .post('/api/tasks')
+        .send({ title: '  Test Task  ' });
+      expect(res.statusCode).toBe(201);
+      expect(res.body.title).toBe('Test Task');
+    });
+
+    it('should handle empty description', async () => {
+      const res = await request(app)
+        .post('/api/tasks')
+        .send({ title: 'Task', description: '' });
+      expect(res.statusCode).toBe(201);
+      expect(res.body.description).toBe('');
+    });
+  });
+
+  describe('Task Filtering', () => {
+    beforeEach(async () => {
+      await request(app).post('/api/tasks').send({ title: 'Task 1' });
+      await request(app).post('/api/tasks').send({ title: 'Task 2' });
+      const task3 = await request(app).post('/api/tasks').send({ title: 'Task 3' });
+      await request(app).patch(`/api/tasks/${task3.body.id}`).send({ completed: true });
+    });
+
+    it('should return all tasks', async () => {
+      const res = await request(app).get('/api/tasks');
+      expect(res.statusCode).toBe(200);
+      expect(res.body.length).toBe(3);
+    });
+
+    it('should count tasks correctly in health endpoint', async () => {
+      const res = await request(app).get('/health');
+      expect(res.body.tasksCount).toBe(3);
+    });
+  });
+
+  describe('Performance Testing', () => {
+    it('should handle error_rate parameter', async () => {
+      const res = await request(app).get('/api/tasks?error_rate=1.0');
+      expect(res.statusCode).toBe(500);
+    });
+
+    it('should not inject errors when error_rate is 0', async () => {
+      const res = await request(app).get('/api/tasks?error_rate=0');
+      expect(res.statusCode).toBe(200);
+    });
+  });
 });

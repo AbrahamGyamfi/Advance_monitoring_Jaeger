@@ -57,4 +57,57 @@ describe('App Component', () => {
 
     expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/api/tasks'), expect.anything());
   });
+
+  test('renders task list when tasks are loaded', async () => {
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => [
+        { id: '1', title: 'Test Task 1', completed: false },
+        { id: '2', title: 'Test Task 2', completed: true }
+      ]
+    });
+
+    await act(async () => {
+      root.render(<App />);
+    });
+
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    });
+
+    expect(container.textContent).toContain('Test Task 1');
+    expect(container.textContent).toContain('Test Task 2');
+  });
+
+  test('handles fetch error gracefully', async () => {
+    fetch.mockRejectedValueOnce(new Error('Network error'));
+
+    await act(async () => {
+      root.render(<App />);
+    });
+
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    });
+
+    expect(container.querySelector('h1')).not.toBeNull();
+  });
+
+  test('renders filter buttons', async () => {
+    await act(async () => {
+      root.render(<App />);
+    });
+
+    const buttons = container.querySelectorAll('button');
+    expect(buttons.length).toBeGreaterThan(0);
+  });
+
+  test('has description textarea', async () => {
+    await act(async () => {
+      root.render(<App />);
+    });
+
+    const textarea = container.querySelector('textarea');
+    expect(textarea).not.toBeNull();
+  });
 });
