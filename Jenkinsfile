@@ -11,7 +11,6 @@ pipeline {
         APP_SERVER_IP = credentials('app-server-ip')
         APP_PRIVATE_IP = credentials('app-private-ip')
         MONITORING_HOST = credentials('monitoring-host')
-        MONITORING_PUBLIC_IP = credentials('monitoring-public-ip')
         ECR_REGISTRY = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
         AWS_CREDENTIALS_ID = 'aws-credentials'
         
@@ -267,56 +266,60 @@ pipeline {
     
     post {
         always {
-            script {
-                echo 'Cleaning up...'
-                sh """
-                    # Remove test containers
-                    docker rm -f test-backend-${BUILD_NUMBER} 2>/dev/null || true
+            node {
+                script {
+                    echo 'Cleaning up...'
+                    sh """
+                        # Remove test containers
+                        docker rm -f test-backend-${BUILD_NUMBER} 2>/dev/null || true
+                        
+                        # Remove stopped containers
+                        docker container prune -f
+                        
+                        # Remove dangling images
+                        docker image prune -f
+                        
+                        # Clean workspace node_modules with sudo
+                        sudo rm -rf backend/node_modules frontend/node_modules || true
+                        
+                        # Show disk usage
+                        echo "Disk usage:"
+                        df -h / | tail -1
+                    """
                     
-                    # Remove stopped containers
-                    docker container prune -f
-                    
-                    # Remove dangling images
-                    docker image prune -f
-                    
-                    # Clean workspace node_modules with sudo
-                    sudo rm -rf backend/node_modules frontend/node_modules || true
-                    
-                    # Show disk usage
-                    echo "Disk usage:"
-                    df -h / | tail -1
-                """
-                
-                // Calculate and display build duration
-                def duration = (System.currentTimeMillis() - BUILD_START_TIME.toLong()) / 1000
-                echo "Total build duration: ${duration}s (${duration/60}m)"
+                    // Calculate and display build duration
+                    def duration = (System.currentTimeMillis() - env.BUILD_START_TIME.toLong()) / 1000
+                    echo "Total build duration: ${duration}s (${duration/60}m)"
+                }
             }
         }
         success {
-            script {
-                def duration = (System.currentTimeMillis() - BUILD_START_TIME.toLong()) / 1000
-                echo '=================================='
-                echo 'PIPELINE COMPLETED SUCCESSFULLY!'
-                echo '=================================='
-                echo "Duration: ${duration}s (${duration/60}m)"
-                echo "Build: #${BUILD_NUMBER}"
-                echo "Backend: ${BACKEND_IMAGE}:${IMAGE_TAG}"
-                echo "Frontend: ${FRONTEND_IMAGE}:${IMAGE_TAG}"
-                echo "Deployed to: http://${EC2_HOST}"
-                echo "Metrics: http://${EC2_HOST}:5000/metrics"
-                echo "Grafana: http://${MONITORING_PUBLIC_IP}:3000"
-                echo "Jaeger: http://${MONITORING_PUBLIC_IP}:16686"
+            node {
+                script {
+                    def duration = (System.currentTimeMillis() - env.BUILD_START_TIME.toLong()) / 1000
+                    echo '=================================='
+                    echo 'PIPELINE COMPLETED SUCCESSFULLY!'
+                    echo '=================================='
+                    echo "Duration: ${duration}s (${duration/60}m)"
+                    echo "Build: #${BUILD_NUMBER}"
+                    echo "Backend: ${BACKEND_IMAGE}:${IMAGE_TAG}"
+                    echo "Frontend: ${FRONTEND_IMAGE}:${IMAGE_TAG}"
+                    echo "Deployed to: http://${EC2_HOST}"
+                    echo "Metrics: http://${EC2_HOST}:5000/metrics"
+                }
             }
         }
         failure {
-            script {
-                def duration = (System.currentTimeMillis() - BUILD_START_TIME.toLong()) / 1000
-                echo '=================================='
-                echo 'PIPELINE FAILED!'
-                echo '=================================='
-                echo "Duration: ${duration}s"
-                echo "Build: #${BUILD_NUMBER}"
-                echo "Check logs: ${BUILD_URL}console"
+            node {
+                script {
+                    def duration = (System.currentTimeMillis() - env.BUILD_START_TIME.toLong()) / 1000
+                    echo '=================================='
+                    echo 'PIPELINE FAILED!'
+                    echo '=================================='
+                    echo "Duration: ${duration}s"
+                    echo "Build: #${BUILD_NUMBER}"
+                    echo "Check logs: ${BUILD_URL}console"
+                }
             }
         }
     }
