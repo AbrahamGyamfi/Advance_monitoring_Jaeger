@@ -41,10 +41,8 @@ pipeline {
                 script {
                     echo '📥 Checking out code...'
                     checkout scm
-                    
                     env.GIT_COMMIT_MSG = sh(script: 'git log -1 --pretty=%B', returnStdout: true).trim()
                     env.GIT_AUTHOR = sh(script: 'git log -1 --pretty=%an', returnStdout: true).trim()
-                    
                     echo "Commit: ${env.GIT_COMMIT_MSG}"
                     echo "Author: ${env.GIT_AUTHOR}"
                 }
@@ -59,28 +57,19 @@ pipeline {
                             echo '🔨 Building backend Docker image...'
                             dir('backend') {
                                 sh """
-                                    docker build \
-                                        --build-arg BUILD_DATE=\$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
-                                        --build-arg VCS_REF=\${GIT_COMMIT} \
-                                        --build-arg BUILD_NUMBER=\${BUILD_NUMBER} \
-                                        -t ${BACKEND_IMAGE}:${IMAGE_TAG} .
+                                    docker build --build-arg BUILD_DATE=\$(date -u +'%Y-%m-%dT%H:%M:%SZ') --build-arg VCS_REF=\${GIT_COMMIT} --build-arg BUILD_NUMBER=\${BUILD_NUMBER} -t ${BACKEND_IMAGE}:${IMAGE_TAG} .
                                 """
                             }
                         }
                     }
                 }
-                
                 stage('Build Frontend') {
                     steps {
                         script {
                             echo '🔨 Building frontend Docker image...'
                             dir('frontend') {
                                 sh """
-                                    docker build \
-                                        --build-arg BUILD_DATE=\$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
-                                        --build-arg VCS_REF=\${GIT_COMMIT} \
-                                        --build-arg BUILD_NUMBER=\${BUILD_NUMBER} \
-                                        -t ${FRONTEND_IMAGE}:${IMAGE_TAG} .
+                                    docker build --build-arg BUILD_DATE=\$(date -u +'%Y-%m-%dT%H:%M:%SZ') --build-arg VCS_REF=\${GIT_COMMIT} --build-arg BUILD_NUMBER=\${BUILD_NUMBER} -t ${FRONTEND_IMAGE}:${IMAGE_TAG} .
                                 """
                             }
                         }
@@ -103,7 +92,6 @@ pipeline {
                         }
                     }
                 }
-                
                 stage('Frontend Tests') {
                     steps {
                         script {
@@ -133,7 +121,6 @@ pipeline {
                         }
                     }
                 }
-                
                 stage('Test Images') {
                     steps {
                         script {
@@ -155,29 +142,16 @@ pipeline {
                     sh '''
                         set -euo pipefail
                         CONTAINER_NAME="test-backend-${BUILD_NUMBER}"
-                        
-                        cleanup() {
-                            docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
-                        }
-                        
+                        cleanup() { docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true; }
                         trap cleanup EXIT
                         cleanup
-                        
                         docker run -d --name "$CONTAINER_NAME" -p ${INTEGRATION_TEST_PORT}:${APP_PORT} "${BACKEND_IMAGE}:${IMAGE_TAG}"
-                        
                         MAX_ITERATIONS=$((${HEALTH_CHECK_TIMEOUT} / ${HEALTH_CHECK_INTERVAL}))
                         for i in $(seq 1 $MAX_ITERATIONS); do
-                            if curl -fsS http://localhost:${INTEGRATION_TEST_PORT}/health >/dev/null 2>&1; then
-                                break
-                            fi
-                            if [ "$i" -eq "$MAX_ITERATIONS" ]; then
-                                echo "Health check timeout"
-                                docker logs "$CONTAINER_NAME"
-                                exit 1
-                            fi
+                            if curl -fsS http://localhost:${INTEGRATION_TEST_PORT}/health >/dev/null 2>&1; then break; fi
+                            if [ "$i" -eq "$MAX_ITERATIONS" ]; then docker logs "$CONTAINER_NAME"; exit 1; fi
                             sleep ${HEALTH_CHECK_INTERVAL}
                         done
-                        
                         curl -fsS http://localhost:${INTEGRATION_TEST_PORT}/api/tasks
                         echo "✅ Integration tests passed!"
                     '''
@@ -209,46 +183,35 @@ pipeline {
             steps {
                 script {
                     echo '🚀 Deploying to EC2...'
-                    sh '''
-                        mkdir -p ~/.ssh
-                        chmod 700 ~/.ssh
-                        ssh-keyscan -H ${EC2_HOST} >> ~/.ssh/known_hosts 2>/dev/null || true
-                        ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} 'mkdir -p ~/taskflow'
-                        scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no docker-compose.prod.yml ${EC2_USER}@${EC2_HOST}:~/taskflow/docker-compose.yml
-                    '''
-                    
-                    sh '''
-                        ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} bash -s ${ECR_REGISTRY} ${IMAGE_TAG} ${AWS_REGION} ${APP_PORT} ${HEALTH_CHECK_TIMEOUT} ${HEALTH_CHECK_INTERVAL} << 'ENDSSH'
-set -e
-cd ~/taskflow
-REGISTRY="$1"
-TAG="$2"
-REGION="$3"
-PORT="$4"
-TIMEOUT="$5"
-INTERVAL="$6"
-
-aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "$REGISTRY"
-docker pull "$REGISTRY/taskflow-backend:$TAG"
-docker pull "$REGISTRY/taskflow-frontend:$TAG"
-
-export REGISTRY_URL="$REGISTRY"
-export IMAGE_TAG="$TAG"
-docker-compose up -d
-
-MAX_ITER=$(( $TIMEOUT / $INTERVAL ))
-for i in $(seq 1 $MAX_ITER); do
-    if curl -fsS "http://localhost:$PORT/health" >/dev/null 2>&1; then
-        echo "Deployment successful!"
-        exit 0
-    fi
-    sleep "$INTERVAL"
-done
-echo "Health check failed"
-docker-compose logs
-exit 1
-ENDSSH
-                    '''
+                    withCredentials([
+                        [$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"],
+                        sshUserPrivateKey(credentialsId: "${EC2_CREDENTIALS_ID}", keyFileVariable: 'SSH_KEY_FILE')
+                    ]) {
+                        sh """
+                            ssh -i "\${SSH_KEY_FILE}" -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} 'mkdir -p ~/${APP_NAME}'
+                        """
+                        sh """
+                            scp -i "\${SSH_KEY_FILE}" -o StrictHostKeyChecking=no docker-compose.prod.yml ${EC2_USER}@${EC2_HOST}:~/${APP_NAME}/docker-compose.yml
+                        """
+                        sh """
+                            aws ecr get-login-password --region ${AWS_REGION} | ssh -i "\${SSH_KEY_FILE}" -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} "docker login --username AWS --password-stdin ${ECR_REGISTRY}"
+                        """
+                        sh """
+                            ssh -i "\${SSH_KEY_FILE}" -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} '
+                                cd ~/${APP_NAME}
+                                docker pull ${BACKEND_IMAGE}:${IMAGE_TAG}
+                                docker pull ${FRONTEND_IMAGE}:${IMAGE_TAG}
+                                docker-compose down || true
+                                export REGISTRY_URL=${ECR_REGISTRY}
+                                export IMAGE_TAG=${IMAGE_TAG}
+                                docker-compose up -d
+                                sleep 10
+                                docker-compose ps
+                                curl -f http://localhost:${APP_PORT}/health || exit 1
+                                echo "✅ Deployment successful!"
+                            '
+                        """
+                    }
                 }
             }
         }
@@ -257,10 +220,20 @@ ENDSSH
             steps {
                 script {
                     echo '🏥 Running health checks...'
-                    sh '''
-                        ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} 'curl -fsS http://localhost:${APP_PORT}/health'
-                    '''
-                    echo "✅ Application is healthy!"
+                    def healthStatus
+                    withCredentials([sshUserPrivateKey(credentialsId: "${EC2_CREDENTIALS_ID}", keyFileVariable: 'SSH_KEY_FILE')]) {
+                        healthStatus = sh(
+                            script: """
+                                ssh -i "\${SSH_KEY_FILE}" -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} 'curl -s http://localhost:${APP_PORT}/health | grep healthy'
+                            """,
+                            returnStatus: true
+                        )
+                    }
+                    if (healthStatus == 0) {
+                        echo "✅ Application is healthy!"
+                    } else {
+                        error "❌ Health check failed!"
+                    }
                 }
             }
         }
@@ -272,25 +245,23 @@ ENDSSH
                 echo '🧹 Cleaning up...'
                 sh """
                     docker rm -f test-backend-${BUILD_NUMBER} 2>/dev/null || true
-                    docker image prune -f --filter 'until=24h' || true
+                    docker image prune -f
+                    docker container prune -f
                 """
             }
         }
-        
         success {
-            script {
-                echo '✅ PIPELINE COMPLETED SUCCESSFULLY!'
-                echo "Backend: ${BACKEND_IMAGE}:${IMAGE_TAG}"
-                echo "Frontend: ${FRONTEND_IMAGE}:${IMAGE_TAG}"
-                echo "Deployed to: http://${EC2_HOST}"
-            }
+            echo '✅ =================================='
+            echo '✅ PIPELINE COMPLETED SUCCESSFULLY!'
+            echo '✅ =================================='
+            echo "Backend Image: ${BACKEND_IMAGE}:${IMAGE_TAG}"
+            echo "Frontend Image: ${FRONTEND_IMAGE}:${IMAGE_TAG}"
+            echo "Deployed to: http://${EC2_HOST}"
         }
-        
         failure {
-            script {
-                echo '❌ PIPELINE FAILED!'
-                echo "Build: #${BUILD_NUMBER}"
-            }
+            echo '❌ =================================='
+            echo '❌ PIPELINE FAILED!'
+            echo '❌ =================================='
         }
     }
 }
