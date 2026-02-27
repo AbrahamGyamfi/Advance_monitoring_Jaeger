@@ -85,6 +85,41 @@ credentials:
               id: "ec2-user"
               secret: "ec2-user"
               description: "EC2 SSH Username"
+          - string:
+              scope: GLOBAL
+              id: "app-name"
+              secret: "taskflow"
+              description: "Application Name"
+          - string:
+              scope: GLOBAL
+              id: "node-version"
+              secret: "18"
+              description: "Node.js Version"
+          - string:
+              scope: GLOBAL
+              id: "app-port"
+              secret: "5000"
+              description: "Application Port"
+          - string:
+              scope: GLOBAL
+              id: "integration-test-port"
+              secret: "5001"
+              description: "Integration Test Port"
+          - string:
+              scope: GLOBAL
+              id: "health-check-timeout"
+              secret: "60"
+              description: "Health Check Timeout (seconds)"
+          - string:
+              scope: GLOBAL
+              id: "health-check-interval"
+              secret: "5"
+              description: "Health Check Interval (seconds)"
+          - string:
+              scope: GLOBAL
+              id: "ec2-user"
+              secret: "ec2-user"
+              description: "EC2 SSH Username"
           - aws:
               scope: GLOBAL
               id: "aws-credentials"
