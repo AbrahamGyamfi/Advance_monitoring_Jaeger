@@ -62,7 +62,7 @@ pipeline {
                                     sh """
                                         aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
                                         docker pull ${BACKEND_IMAGE}:latest || true
-                                        docker build \
+                                        DOCKER_BUILDKIT=0 docker build \
                                             --cache-from ${BACKEND_IMAGE}:latest \
                                             --build-arg BUILD_DATE=\$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
                                             --build-arg VCS_REF=\${GIT_COMMIT} \
@@ -83,7 +83,7 @@ pipeline {
                                     sh """
                                         aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
                                         docker pull ${FRONTEND_IMAGE}:latest || true
-                                        docker build \
+                                        DOCKER_BUILDKIT=0 docker build \
                                             --cache-from ${FRONTEND_IMAGE}:latest \
                                             --build-arg BUILD_DATE=\$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
                                             --build-arg VCS_REF=\${GIT_COMMIT} \
