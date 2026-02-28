@@ -185,7 +185,7 @@ pipeline {
                             sleep ${HEALTH_CHECK_INTERVAL}
                         done
                         curl -fsS http://localhost:${INTEGRATION_TEST_PORT}/api/tasks
-                        echo "✅ Integration tests passed!"
+                        echo "Integration tests passed!"
                     '''
                 }
             }
@@ -260,10 +260,11 @@ pipeline {
                             sed "s|<TASK_DEFINITION>|\${TASK_DEF_ARN}|g" appspec.yaml > appspec-${BUILD_NUMBER}.yaml
                             
                             # Create CodeDeploy deployment
+                            APPSPEC_CONTENT=\$(cat appspec-${BUILD_NUMBER}.yaml | base64 | tr -d '\n')
                             aws deploy create-deployment \
                                 --application-name taskflow-cluster \
                                 --deployment-group-name taskflow-service-dg \
-                                --revision '{"revisionType":"AppSpecContent","appSpecContent":{"content":"'\$(cat appspec-${BUILD_NUMBER}.yaml | base64 -w 0)'"}}' \
+                                --revision '{"revisionType":"AppSpecContent","appSpecContent":{"content":"'\${APPSPEC_CONTENT}'"}}' \
                                 --region ${AWS_REGION}
                             
                             echo "CodeDeploy Blue/Green deployment initiated!"
