@@ -1,0 +1,18 @@
+version: 0.0
+os: linux
+files:
+  - source: /
+    destination: /home/ec2-user/taskflow
+hooks:
+  ApplicationStop:
+    - location: hooks/stop.sh
+      timeout: 60
+      runas: ec2-user
+  ApplicationStart:
+    - location: hooks/start.sh
+      timeout: 300
+      runas: ec2-user
+  ValidateService:
+    - location: hooks/validate.sh
+      timeout: 60
+      runas: ec2-user

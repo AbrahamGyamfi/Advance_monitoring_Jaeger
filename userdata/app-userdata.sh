@@ -23,6 +23,14 @@ systemctl start docker
 systemctl enable docker
 
 # Install additional tools
-yum install -y git curl wget
+yum install -y git curl wget ruby
+
+# Install CodeDeploy agent
+cd /home/ec2-user
+wget https://aws-codedeploy-eu-west-1.s3.eu-west-1.amazonaws.com/latest/install
+chmod +x ./install
+./install auto
+systemctl start codedeploy-agent
+systemctl enable codedeploy-agent
 
 echo "Application server setup completed!"

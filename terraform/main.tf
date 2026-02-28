@@ -53,3 +53,17 @@ module "monitoring" {
   app_private_ip       = module.compute.app_private_ip
   private_key_path     = var.private_key_path
 }
+
+module "codedeploy" {
+  count  = var.enable_codedeploy ? 1 : 0
+  source = "./modules/codedeploy"
+
+  vpc_id                = var.vpc_id
+  subnet_ids            = var.subnet_ids
+  security_group_id     = module.networking.security_group_id
+  ami_id                = module.compute.ami_id
+  key_name              = module.networking.key_name
+  instance_profile_name = module.security.iam_instance_profile
+  user_data             = file("${path.module}/../userdata/app-userdata.sh")
+  aws_account_id        = var.aws_account_id
+}

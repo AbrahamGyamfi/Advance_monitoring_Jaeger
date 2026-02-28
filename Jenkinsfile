@@ -228,28 +228,33 @@ pipeline {
             }
         }
         
-        stage('Deploy to EC2') {
+        stage('Deploy via CodeDeploy') {
             steps {
                 script {
-                    echo 'Deploying to EC2 via private IP...'
+                    echo 'Creating deployment package...'
                     withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"]]) {
                         sh """
-                            ssh -i /var/lib/jenkins/.ssh/id_rsa -o StrictHostKeyChecking=no ${EC2_USER}@${APP_PRIVATE_IP} 'mkdir -p ~/${APP_NAME}'
-                            scp -i /var/lib/jenkins/.ssh/id_rsa -o StrictHostKeyChecking=no docker-compose.yml ${EC2_USER}@${APP_PRIVATE_IP}:~/${APP_NAME}/docker-compose.yml
-                            aws ecr get-login-password --region ${AWS_REGION} | ssh -i /var/lib/jenkins/.ssh/id_rsa -o StrictHostKeyChecking=no ${EC2_USER}@${APP_PRIVATE_IP} "docker login --username AWS --password-stdin ${ECR_REGISTRY}"
-                            ssh -i /var/lib/jenkins/.ssh/id_rsa -o StrictHostKeyChecking=no ${EC2_USER}@${APP_PRIVATE_IP} '
-                                cd ~/${APP_NAME}
-                                docker pull ${BACKEND_IMAGE}:${IMAGE_TAG}
-                                docker pull ${FRONTEND_IMAGE}:${IMAGE_TAG}
-                                docker-compose down || true
-                                export REGISTRY_URL=${ECR_REGISTRY}
-                                export IMAGE_TAG=${IMAGE_TAG}
-                                export MONITORING_HOST=${MONITORING_HOST}
-                                docker-compose up -d
-                                sleep 10
-                                curl -f http://localhost:${APP_PORT}/health || exit 1
-                                echo "Deployment successful!"
-                            '
+                            # Create deployment bundle
+                            zip -r deployment-${BUILD_NUMBER}.zip docker-compose.yml appspec.yml
+                            
+                            # Upload to S3
+                            aws s3 cp deployment-${BUILD_NUMBER}.zip s3://taskflow-codedeploy-${AWS_ACCOUNT_ID}/
+                            
+                            # Trigger CodeDeploy Blue-Green deployment
+                            aws deploy create-deployment \
+                                --application-name taskflow-app \
+                                --deployment-group-name taskflow-blue-green \
+                                --s3-location bucket=taskflow-codedeploy-${AWS_ACCOUNT_ID},key=deployment-${BUILD_NUMBER}.zip,bundleType=zip \
+                                --region ${AWS_REGION} \
+                                --output json > deployment-output.json
+                            
+                            # Get deployment ID
+                            DEPLOYMENT_ID=\$(cat deployment-output.json | grep -o '"deploymentId": "[^"]*' | cut -d'"' -f4)
+                            echo "Deployment ID: \$DEPLOYMENT_ID"
+                            
+                            # Wait for deployment to complete
+                            aws deploy wait deployment-successful --deployment-id \$DEPLOYMENT_ID --region ${AWS_REGION}
+                            echo "Blue-Green deployment completed successfully!"
                         """
                     }
                 }

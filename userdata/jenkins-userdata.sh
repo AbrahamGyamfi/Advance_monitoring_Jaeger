@@ -132,6 +132,11 @@ credentials:
               scope: GLOBAL
               id: "ec2-user"
               secret: "ec2-user"
+          - aws:
+              scope: GLOBAL
+              id: "aws-credentials"
+              accessKey: "${AWS_ACCESS_KEY_ID}"
+              secretKey: "${AWS_SECRET_ACCESS_KEY}"
           - basicSSHUserPrivateKey:
               scope: GLOBAL
               id: "app-server-ssh"

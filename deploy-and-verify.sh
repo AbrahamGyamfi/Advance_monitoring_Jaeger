@@ -54,24 +54,42 @@ rm -f tfplan
 
 # Get outputs
 JENKINS_IP=$(terraform output -raw jenkins_public_ip)
-APP_IP=$(terraform output -raw app_public_ip)
+APP_IP=$(terraform output -raw app_public_ip 2>/dev/null || echo "")
 MONITORING_IP=$(terraform output -raw monitoring_public_ip)
 PROMETHEUS_URL=$(terraform output -raw prometheus_url)
 GRAFANA_URL=$(terraform output -raw grafana_url)
 CLOUDTRAIL_BUCKET=$(terraform output -raw cloudtrail_bucket)
 GUARDDUTY_ID=$(terraform output -raw guardduty_detector_id)
 
+# CodeDeploy outputs (if enabled)
+ALB_DNS=$(terraform output -raw alb_dns_name 2>/dev/null || echo "")
+CODEDEPLOY_APP=$(terraform output -raw codedeploy_app_name 2>/dev/null || echo "")
+DEPLOYMENT_GROUP=$(terraform output -raw deployment_group_name 2>/dev/null || echo "")
+
+# Determine endpoint
+if [ -n "$ALB_DNS" ]; then
+    APP_ENDPOINT="http://$ALB_DNS"
+    API_ENDPOINT="http://$ALB_DNS:5000"
+else
+    APP_ENDPOINT="http://$APP_IP"
+    API_ENDPOINT="http://$APP_IP:5000"
+fi
+
 cd ..
 
 echo "SUCCESS: Infrastructure deployed"
 echo "  Jenkins: http://$JENKINS_IP:8080"
-echo "  App: http://$APP_IP"
+if [ -n "$ALB_DNS" ]; then
+    echo "  App (ALB): $APP_ENDPOINT"
+else
+    echo "  App: $APP_ENDPOINT"
+fi
 echo "  Monitoring: http://$MONITORING_IP:3000"
 
 # Create ECR repositories if they don't exist
 echo ""
 echo "INFO: Ensuring ECR repositories exist..."
-AWS_REGION=$(terraform output -raw aws_region)
+AWS_REGION=$(cd terraform && terraform output -raw aws_region)
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
 for REPO in taskflow-backend taskflow-frontend; do
@@ -88,19 +106,29 @@ done
 echo ""
 echo "[3/9] Waiting for instances to initialize (120s)..."
 sleep 120
+
+if [ -n "$CODEDEPLOY_APP" ]; then
+    echo "INFO: Verifying CodeDeploy..."
+    aws deploy get-application --application-name "$CODEDEPLOY_APP" >/dev/null 2>&1 && echo "SUCCESS: CodeDeploy ready" || echo "WARNING: CodeDeploy not ready"
+    
+    if [ -n "$ALB_DNS" ]; then
+        echo "INFO: Waiting for ALB (60s)..."
+        sleep 60
+    fi
+fi
 echo "SUCCESS: Wait complete"
 
 # Step 4: Verify Services
 echo ""
 echo "[4/9] Verifying Application Services..."
 
-if curl -sf http://$APP_IP/health > /dev/null 2>&1; then
+if curl -sf "$APP_ENDPOINT/health" > /dev/null 2>&1; then
     echo "SUCCESS: App server is healthy"
 else
     echo "WARNING: App server not responding yet"
 fi
 
-if curl -sf http://$APP_IP:5000/metrics > /dev/null 2>&1; then
+if [ -n "$APP_IP" ] && curl -sf "http://$APP_IP:5000/metrics" > /dev/null 2>&1; then
     echo "SUCCESS: Metrics endpoint working"
 else
     echo "WARNING: Metrics not available yet"
@@ -155,15 +183,16 @@ fi
 # Step 7: Generate Test Traffic
 echo ""
 echo "[7/9] Generating Test Traffic..."
+
 for i in {1..10}; do
-    curl -sf -X POST http://$APP_IP:5000/api/tasks \
+    curl -sf -X POST "$API_ENDPOINT/api/tasks" \
         -H 'Content-Type: application/json' \
         -d "{\"title\":\"Test Task $i\",\"description\":\"Generated for testing\"}" > /dev/null 2>&1 || true
 done
 echo "SUCCESS: Created 10 test tasks"
 
 for i in {1..5}; do
-    curl -sf http://$APP_IP:5000/api/invalid > /dev/null 2>&1 || true
+    curl -sf "$API_ENDPOINT/api/invalid" > /dev/null 2>&1 || true
 done
 echo "SUCCESS: Generated error traffic"
 
@@ -178,7 +207,7 @@ echo "INFO: Phase 3 - High latency >300ms (10 min)"
 TOTAL_REQUESTS=0
 PHASE1_END=$(($(date +%s) + 120))
 while [ $(date +%s) -lt $PHASE1_END ]; do
-    curl -fsS "http://$APP_IP:5000/api/tasks" >/dev/null 2>&1 || true
+    curl -fsS "$API_ENDPOINT/api/tasks" >/dev/null 2>&1 || true
     ((TOTAL_REQUESTS++))
     sleep 0.5
 done
@@ -187,9 +216,9 @@ echo "INFO: Phase 1 complete - $TOTAL_REQUESTS requests"
 PHASE2_END=$(($(date +%s) + 600))
 while [ $(date +%s) -lt $PHASE2_END ]; do
     if [ $((RANDOM % 10)) -eq 0 ]; then
-        curl -fsS "http://$APP_IP:5000/api/test/error?rate=0.1" >/dev/null 2>&1 || true
+        curl -fsS "$API_ENDPOINT/api/test/error?rate=0.1" >/dev/null 2>&1 || true
     else
-        curl -fsS "http://$APP_IP:5000/api/tasks" >/dev/null 2>&1 || true
+        curl -fsS "$API_ENDPOINT/api/tasks" >/dev/null 2>&1 || true
     fi
     ((TOTAL_REQUESTS++))
     sleep 0.3
@@ -198,7 +227,7 @@ echo "INFO: Phase 2 complete - $TOTAL_REQUESTS total requests"
 
 PHASE3_END=$(($(date +%s) + 600))
 while [ $(date +%s) -lt $PHASE3_END ]; do
-    curl -fsS "http://$APP_IP:5000/api/tasks?delay_ms=400" >/dev/null 2>&1 || true
+    curl -fsS "$API_ENDPOINT/api/tasks?delay_ms=400" >/dev/null 2>&1 || true
     ((TOTAL_REQUESTS++))
     sleep 0.5
 done
@@ -224,8 +253,14 @@ echo "[9/9] Deployment Summary"
 echo "============================================"
 echo ""
 echo "Application URLs:"
-echo "  Frontend:     http://$APP_IP"
-echo "  Backend API:  http://$APP_IP:5000"
+if [ -n "$ALB_DNS" ]; then
+    echo "  Frontend:     $APP_ENDPOINT"
+    echo "  Backend API:  $API_ENDPOINT"
+    echo "  ALB DNS:      $ALB_DNS"
+else
+    echo "  Frontend:     $APP_ENDPOINT"
+    echo "  Backend API:  $API_ENDPOINT"
+fi
 echo "  Metrics:      http://$APP_IP:5000/metrics"
 echo ""
 echo "Monitoring URLs:"
@@ -237,6 +272,10 @@ echo ""
 echo "CI/CD:"
 echo "  Jenkins:      http://$JENKINS_IP:8080"
 echo "  Initial pwd:  ssh ec2-user@$JENKINS_IP 'sudo cat /var/lib/jenkins/secrets/initialAdminPassword'"
+if [ -n "$CODEDEPLOY_APP" ]; then
+    echo "  CodeDeploy:   $CODEDEPLOY_APP / $DEPLOYMENT_GROUP"
+    echo "  Strategy:     Blue-Green via ALB"
+fi
 echo ""
 echo "Security:"
 echo "  CloudTrail:   $CLOUDTRAIL_BUCKET"
