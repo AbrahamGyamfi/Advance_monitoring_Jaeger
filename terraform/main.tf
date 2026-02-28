@@ -53,3 +53,20 @@ module "monitoring" {
   app_private_ip       = module.compute.app_private_ip
   private_key_path     = var.private_key_path
 }
+
+module "ecs" {
+  source = "./modules/ecs"
+
+  cluster_name         = "taskflow-cluster"
+  service_name         = "taskflow-service"
+  task_family          = "taskflow-task"
+  backend_image        = "${var.aws_account_id}.dkr.ecr.${var.aws_region}.amazonaws.com/taskflow-backend:latest"
+  frontend_image       = "${var.aws_account_id}.dkr.ecr.${var.aws_region}.amazonaws.com/taskflow-frontend:latest"
+  vpc_id               = module.networking.vpc_id
+  subnet_ids           = module.networking.subnet_ids
+  security_group_id    = module.networking.security_group_id
+  execution_role_arn   = module.security.ecs_task_execution_role_arn
+  task_role_arn        = module.security.ecs_task_role_arn
+  monitoring_host      = module.monitoring.monitoring_private_ip
+  aws_region           = var.aws_region
+}

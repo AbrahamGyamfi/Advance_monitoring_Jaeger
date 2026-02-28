@@ -228,28 +228,45 @@ pipeline {
             }
         }
         
-        stage('Deploy to EC2') {
+        stage('Deploy to ECS') {
             steps {
                 script {
-                    echo 'Deploying to EC2 via private IP...'
+                    echo 'Deploying to ECS with CodeDeploy Blue/Green...'
                     withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"]]) {
                         sh """
-                            ssh -i /var/lib/jenkins/.ssh/id_rsa -o StrictHostKeyChecking=no ${EC2_USER}@${APP_PRIVATE_IP} 'mkdir -p ~/${APP_NAME}'
-                            scp -i /var/lib/jenkins/.ssh/id_rsa -o StrictHostKeyChecking=no docker-compose.yml ${EC2_USER}@${APP_PRIVATE_IP}:~/${APP_NAME}/docker-compose.yml
-                            aws ecr get-login-password --region ${AWS_REGION} | ssh -i /var/lib/jenkins/.ssh/id_rsa -o StrictHostKeyChecking=no ${EC2_USER}@${APP_PRIVATE_IP} "docker login --username AWS --password-stdin ${ECR_REGISTRY}"
-                            ssh -i /var/lib/jenkins/.ssh/id_rsa -o StrictHostKeyChecking=no ${EC2_USER}@${APP_PRIVATE_IP} '
-                                cd ~/${APP_NAME}
-                                docker pull ${BACKEND_IMAGE}:${IMAGE_TAG}
-                                docker pull ${FRONTEND_IMAGE}:${IMAGE_TAG}
-                                docker-compose down || true
-                                export REGISTRY_URL=${ECR_REGISTRY}
-                                export IMAGE_TAG=${IMAGE_TAG}
-                                export MONITORING_HOST=${MONITORING_HOST}
-                                docker-compose up -d
-                                sleep 10
-                                curl -f http://localhost:${APP_PORT}/health || exit 1
-                                echo "Deployment successful!"
-                            '
+                            # Get ECS task execution and task role ARNs
+                            EXECUTION_ROLE_ARN=\$(aws iam get-role --role-name taskflow-cloudwatch-logs-ecs-execution --query 'Role.Arn' --output text)
+                            TASK_ROLE_ARN=\$(aws iam get-role --role-name taskflow-cloudwatch-logs-ecs-task --query 'Role.Arn' --output text)
+                            
+                            # Create task definition from template
+                            sed -e "s|<BACKEND_IMAGE>|${BACKEND_IMAGE}:${IMAGE_TAG}|g" \
+                                -e "s|<FRONTEND_IMAGE>|${FRONTEND_IMAGE}:${IMAGE_TAG}|g" \
+                                -e "s|<EXECUTION_ROLE_ARN>|\${EXECUTION_ROLE_ARN}|g" \
+                                -e "s|<TASK_ROLE_ARN>|\${TASK_ROLE_ARN}|g" \
+                                -e "s|<MONITORING_HOST>|${MONITORING_HOST}|g" \
+                                -e "s|<AWS_REGION>|${AWS_REGION}|g" \
+                                taskdef.json > taskdef-${BUILD_NUMBER}.json
+                            
+                            # Register new task definition
+                            TASK_DEF_ARN=\$(aws ecs register-task-definition \
+                                --cli-input-json file://taskdef-${BUILD_NUMBER}.json \
+                                --region ${AWS_REGION} \
+                                --query 'taskDefinition.taskDefinitionArn' \
+                                --output text)
+                            
+                            echo "Registered task definition: \${TASK_DEF_ARN}"
+                            
+                            # Create appspec for CodeDeploy
+                            sed "s|<TASK_DEFINITION>|\${TASK_DEF_ARN}|g" appspec.yaml > appspec-${BUILD_NUMBER}.yaml
+                            
+                            # Create CodeDeploy deployment
+                            aws deploy create-deployment \
+                                --application-name taskflow-cluster \
+                                --deployment-group-name taskflow-service-dg \
+                                --revision '{"revisionType":"AppSpecContent","appSpecContent":{"content":"'\$(cat appspec-${BUILD_NUMBER}.yaml | base64 -w 0)'"}}' \
+                                --region ${AWS_REGION}
+                            
+                            echo "CodeDeploy Blue/Green deployment initiated!"
                         """
                     }
                 }
@@ -259,17 +276,31 @@ pipeline {
         stage('Health Check') {
             steps {
                 script {
-                    echo 'Running health checks...'
-                    def healthStatus = sh(
-                        script: """
-                            ssh -i /var/lib/jenkins/.ssh/id_rsa -o StrictHostKeyChecking=no ${EC2_USER}@${APP_PRIVATE_IP} 'curl -s http://localhost:${APP_PORT}/health | grep healthy'
-                        """,
-                        returnStatus: true
-                    )
-                    if (healthStatus == 0) {
-                        echo "Application is healthy!"
-                    } else {
-                        error "Health check failed!"
+                    echo 'Waiting for CodeDeploy deployment...'
+                    withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"]]) {
+                        sh """
+                            # Get ALB DNS name
+                            ALB_DNS=\$(aws elbv2 describe-load-balancers \
+                                --names taskflow-cluster-alb \
+                                --region ${AWS_REGION} \
+                                --query 'LoadBalancers[0].DNSName' \
+                                --output text)
+                            
+                            echo "ALB DNS: \${ALB_DNS}"
+                            
+                            # Wait for deployment (max 10 minutes)
+                            for i in {1..60}; do
+                                if curl -fsS http://\${ALB_DNS}/health >/dev/null 2>&1; then
+                                    echo "Application is healthy!"
+                                    exit 0
+                                fi
+                                echo "Waiting for deployment... (\${i}/60)"
+                                sleep 10
+                            done
+                            
+                            echo "Health check timeout!"
+                            exit 1
+                        """
                     }
                 }
             }
@@ -318,14 +349,14 @@ pipeline {
                     echo "Build: #${BUILD_NUMBER}"
                     echo "Backend: ${BACKEND_IMAGE}:${IMAGE_TAG}"
                     echo "Frontend: ${FRONTEND_IMAGE}:${IMAGE_TAG}"
-                    echo "Deployed to: http://${EC2_HOST}"
-                    echo "Metrics: http://${EC2_HOST}:5000/metrics"
+                    echo "Deployed to ECS with Blue/Green deployment"
+                    echo "Check ALB for application URL"
                 } catch (Exception e) {
                     echo '=================================='
                     echo 'PIPELINE COMPLETED SUCCESSFULLY!'
                     echo '=================================='
                     echo "Build: #${BUILD_NUMBER}"
-                    echo "Deployed to: http://${EC2_HOST}"
+                    echo "Deployed to ECS with Blue/Green"
                 }
             }
         }

@@ -1,3 +1,14 @@
+data "aws_vpc" "default" {
+  default = true
+}
+
+data "aws_subnets" "default" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
+  }
+}
+
 resource "aws_security_group" "taskflow" {
   name        = var.security_group_name
   description = "Security group for TaskFlow application"

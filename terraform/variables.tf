@@ -56,3 +56,8 @@ variable "cloudtrail_bucket_name" {
   type        = string
   default     = "taskflow-cloudtrail-logs"
 }
+
+variable "aws_account_id" {
+  description = "AWS Account ID"
+  type        = string
+}
