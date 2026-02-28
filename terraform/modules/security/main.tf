@@ -129,6 +129,28 @@ resource "aws_iam_role_policy_attachment" "ecr_read_only" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
+resource "aws_iam_role_policy" "codedeploy_s3" {
+  name = "codedeploy-s3-access"
+  role = aws_iam_role.cloudwatch_logs.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          "arn:aws:s3:::taskflow-codedeploy-${var.aws_account_id}",
+          "arn:aws:s3:::taskflow-codedeploy-${var.aws_account_id}/*"
+        ]
+      }
+    ]
+  })
+}
+
 resource "aws_iam_role" "ecs_task_execution" {
   name = "${var.cloudwatch_role_name}-ecs-execution"
 
@@ -210,4 +232,75 @@ resource "aws_iam_role_policy_attachment" "codedeploy_ecs" {
 resource "aws_iam_instance_profile" "cloudwatch_logs" {
   name = var.cloudwatch_role_name
   role = aws_iam_role.cloudwatch_logs.name
+}
+
+# Jenkins IAM Role
+resource "aws_iam_role" "jenkins" {
+  name = "${var.cloudwatch_role_name}-jenkins"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Project = "TaskFlow"
+  }
+}
+
+resource "aws_iam_role_policy" "jenkins_ssm" {
+  name = "jenkins-ssm-access"
+  role = aws_iam_role.jenkins.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameter",
+          "ssm:PutParameter",
+          "ssm:DescribeParameters"
+        ]
+        Resource = "arn:aws:ssm:*:${var.aws_account_id}:parameter/taskflow/*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ec2:DescribeInstances",
+          "ec2:DescribeTags"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = "sts:GetCallerIdentity"
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_instance_profile" "jenkins" {
+  name = "${var.cloudwatch_role_name}-jenkins"
+  role = aws_iam_role.jenkins.name
+}
+
+# Store SSH private key in SSM Parameter Store
+resource "aws_ssm_parameter" "ssh_private_key" {
+  name  = "/taskflow/ssh-private-key"
+  type  = "SecureString"
+  value = var.ssh_private_key
+
+  tags = {
+    Project = "TaskFlow"
+  }
 }

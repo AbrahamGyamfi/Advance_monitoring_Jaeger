@@ -22,3 +22,8 @@ variable "app_iam_instance_profile" {
   description = "IAM instance profile attached to the application server"
   type        = string
 }
+
+variable "jenkins_iam_instance_profile" {
+  description = "IAM instance profile attached to the Jenkins server"
+  type        = string
+}

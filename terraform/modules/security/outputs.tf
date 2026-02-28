@@ -27,3 +27,8 @@ output "codedeploy_role_arn" {
   description = "CodeDeploy service role ARN"
   value       = aws_iam_role.codedeploy.arn
 }
+
+output "jenkins_instance_profile" {
+  description = "Jenkins IAM instance profile name"
+  value       = aws_iam_instance_profile.jenkins.name
+}

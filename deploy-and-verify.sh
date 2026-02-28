@@ -138,6 +138,17 @@ fi
 echo ""
 echo "[5/9] Verifying Monitoring Stack..."
 
+# Check if monitoring containers are running
+MONITORING_CONTAINERS=$(ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no ec2-user@$MONITORING_IP "docker ps --format '{{.Names}}'" 2>/dev/null | wc -l)
+
+if [ "$MONITORING_CONTAINERS" -lt 7 ]; then
+    echo "WARNING: Only $MONITORING_CONTAINERS containers running, expected 7"
+    echo "INFO: Starting monitoring stack..."
+    ssh -i ~/.ssh/id_rsa ec2-user@$MONITORING_IP "cd ~/monitoring && docker-compose up -d" || echo "WARNING: Failed to start monitoring stack"
+    echo "INFO: Waiting for services to start (60s)..."
+    sleep 60
+fi
+
 if curl -sf $PROMETHEUS_URL/-/healthy > /dev/null 2>&1; then
     echo "SUCCESS: Prometheus is running"
 else
@@ -154,6 +165,24 @@ if curl -sf http://$MONITORING_IP:16686 > /dev/null 2>&1; then
     echo "SUCCESS: Jaeger is running"
 else
     echo "WARNING: Jaeger not ready yet"
+fi
+
+if curl -sf http://$MONITORING_IP:9093/-/healthy > /dev/null 2>&1; then
+    echo "SUCCESS: Alertmanager is running"
+else
+    echo "WARNING: Alertmanager not ready yet"
+fi
+
+if curl -sf http://$MONITORING_IP:9100/metrics > /dev/null 2>&1; then
+    echo "SUCCESS: Node Exporter is running"
+else
+    echo "WARNING: Node Exporter not ready yet"
+fi
+
+if curl -sf http://$MONITORING_IP:3100/ready > /dev/null 2>&1; then
+    echo "SUCCESS: Loki is running"
+else
+    echo "WARNING: Loki not ready yet (may still be warming up)"
 fi
 
 # Step 6: Verify AWS Services
@@ -268,10 +297,13 @@ echo "  Grafana:      $GRAFANA_URL (admin/check .env file)"
 echo "  Prometheus:   $PROMETHEUS_URL"
 echo "  Alertmanager: http://$MONITORING_IP:9093"
 echo "  Jaeger:       http://$MONITORING_IP:16686"
+echo "  Loki:         http://$MONITORING_IP:3100"
+echo "  Node Exp:     http://$MONITORING_IP:9100/metrics"
 echo ""
 echo "CI/CD:"
 echo "  Jenkins:      http://$JENKINS_IP:8080"
-echo "  Initial pwd:  ssh ec2-user@$JENKINS_IP 'sudo cat /var/lib/jenkins/secrets/initialAdminPassword'"
+echo "  Username:     admin"
+echo "  Password:     aws ssm get-parameter --region $AWS_REGION --name /taskflow/jenkins-admin-password --with-decryption --query 'Parameter.Value' --output text"
 if [ -n "$CODEDEPLOY_APP" ]; then
     echo "  CodeDeploy:   $CODEDEPLOY_APP / $DEPLOYMENT_GROUP"
     echo "  Strategy:     Blue-Green via ALB"

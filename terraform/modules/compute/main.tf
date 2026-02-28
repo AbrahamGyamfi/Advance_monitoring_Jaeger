@@ -14,11 +14,12 @@ data "aws_ami" "amazon_linux_2" {
 }
 
 resource "aws_instance" "jenkins" {
-  ami             = data.aws_ami.amazon_linux_2.id
-  instance_type   = var.jenkins_instance_type
-  key_name        = var.key_name
-  security_groups = [var.security_group_name]
-  user_data       = file("${path.root}/../userdata/jenkins-userdata.sh")
+  ami                  = data.aws_ami.amazon_linux_2.id
+  instance_type        = var.jenkins_instance_type
+  key_name             = var.key_name
+  security_groups      = [var.security_group_name]
+  iam_instance_profile = var.jenkins_iam_instance_profile
+  user_data            = file("${path.root}/../userdata/jenkins-userdata.sh")
 
   tags = {
     Name        = "TaskFlow-Jenkins-Server"

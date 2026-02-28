@@ -178,10 +178,10 @@ TaskFlow is a production-grade task management application demonstrating enterpr
 
 ### Prerequisites
 - Terraform >= 1.0
-- AWS CLI configured
-- SSH key pair (`~/.ssh/id_rsa.pub`)
-- Docker & Docker Compose
-- `terraform.tfvars` with `admin_cidr_blocks` set to trusted source IPs (for SSH/Jenkins/Grafana/Prometheus access)
+- AWS CLI configured with credentials
+- SSH key pair (`~/.ssh/id_rsa` and `~/.ssh/id_rsa.pub`)
+- Docker & Docker Compose (for local development)
+- `terraform.tfvars` with `admin_cidr_blocks` set to your IP address
 
 ### 1. Configure Terraform Variables
 ```bash
@@ -197,51 +197,55 @@ terraform plan
 terraform apply
 ```
 
-### 3. Configure Jenkins
+### 3. Access Jenkins (Fully Automated)
 ```bash
-# Get Jenkins initial password
-ssh -i ~/.ssh/id_rsa ec2-user@<JENKINS_IP>
-sudo cat /var/lib/jenkins/secrets/initialAdminPassword
+# Jenkins is auto-configured with JCasC - no manual setup needed!
+# Get admin password from SSM Parameter Store
+aws ssm get-parameter --name /taskflow/jenkins-admin-password --with-decryption --query 'Parameter.Value' --output text
 
 # Access Jenkins at http://<JENKINS_IP>:8080
-# Install suggested plugins and configure credentials
+# Username: admin
+# All credentials pre-configured automatically
 ```
 
-### 4. Access Services
-- **Application**: http://taskflow-alb-365219180.eu-west-1.elb.amazonaws.com (via ALB)
-- **Grafana**: http://<MONITORING_SERVER_IP>:3000 (admin / see monitoring/.env)
+### 4. Access Services (All Auto-Configured)
+- **Application**: http://<ALB_DNS> (via Application Load Balancer)
+- **Grafana**: http://<MONITORING_SERVER_IP>:3000 (admin / check .env)
 - **Prometheus**: http://<MONITORING_SERVER_IP>:9090
 - **Jaeger**: http://<MONITORING_SERVER_IP>:16686
 - **Alertmanager**: http://<MONITORING_SERVER_IP>:9093
-- **Jenkins**: http://<JENKINS_SERVER_IP>:8080
+- **Loki**: http://<MONITORING_SERVER_IP>:3100
+- **Node Exporter**: http://<MONITORING_SERVER_IP>:9100
+- **Jenkins**: http://<JENKINS_SERVER_IP>:8080 (admin / SSM parameter)
 
 ## Terraform Infrastructure
 
 ### Modular Structure
 ```
 terraform/
-├── main.tf                    # Root module
+├── main.tf                    # Root module orchestration
 ├── variables.tf               # Input variables
 ├── outputs.tf                 # Output values
 └── modules/
-    ├── networking/            # Security groups, SSH keys
-    ├── compute/               # EC2 instances
+    ├── networking/            # Security groups (all monitoring ports), SSH keys
+    ├── compute/               # EC2 instances (Jenkins with IAM, App)
     ├── deployment/            # App deployment provisioner
-    ├── monitoring/            # Prometheus + Grafana
-    ├── security/              # CloudTrail, GuardDuty, IAM
-    └── codedeploy/            # ALB, ASG, CodeDeploy
+    ├── monitoring/            # Full observability stack (7 services)
+    ├── security/              # CloudTrail, GuardDuty, IAM, SSM parameters
+    └── codedeploy/            # ALB, ASG, Blue-Green deployment
 ```
 
 ### Resources Provisioned
-- 2 EC2 instances (Jenkins, Monitoring)
-- Auto Scaling Group with 1-2 instances
-- Application Load Balancer
+- 2 EC2 instances (Jenkins with JCasC, Monitoring with docker-compose)
+- Auto Scaling Group with 1-2 instances (app servers)
+- Application Load Balancer with Blue-Green target groups
 - CodeDeploy application and deployment group
-- Security group with required ports
-- IAM roles for CloudWatch and CodeDeploy
-- S3 buckets for CloudTrail and CodeDeploy artifacts
+- Security group with all monitoring ports (22, 80, 3000, 3100, 5000, 8080, 9090, 9093, 9100, 16686)
+- IAM roles: CloudWatch, CodeDeploy, Jenkins (with SSM access)
+- SSM parameters: SSH private key, Jenkins admin password
+- S3 buckets: CloudTrail logs, CodeDeploy artifacts
 - CloudWatch log groups
-- Imported existing CloudTrail and GuardDuty
+- CloudTrail and GuardDuty detectors
 
 ## Observability Stack
 
@@ -477,15 +481,19 @@ cd terraform && terraform destroy
 │   ├── nginx.conf             # Reverse proxy configuration
 │   └── Dockerfile             # Multi-stage build
 ├── monitoring/                # Observability configuration
+│   ├── docker-compose.yml     # Full stack deployment (7 services)
 │   ├── config/
 │   │   ├── prometheus.yml     # Scrape configs
 │   │   ├── alert_rules.yml    # SLO-based alerts
 │   │   ├── alertmanager.yml   # Alert routing
 │   │   ├── loki-config.yml    # Log aggregation
+│   │   ├── promtail-app.yml   # Log shipping
 │   │   └── grafana-datasource.yml
 │   ├── dashboards/
 │   │   └── taskflow-observability.json
 │   └── validate-observability.sh
+├── jenkins/
+│   └── jenkins.yaml           # JCasC configuration template
 ├── userdata/                  # EC2 cloud-init scripts
 │   ├── jenkins-userdata.sh
 │   ├── app-userdata.sh
@@ -511,10 +519,11 @@ Monthly AWS costs (approximate):
 ## Technical Highlights
 
 ### Infrastructure as Code
-- Modular Terraform with 5 specialized modules
-- Automated provisioning of 3 EC2 instances
-- Security groups with least-privilege access
-- IAM roles for service-to-service authentication
+- Modular Terraform with 6 specialized modules (networking, compute, security, monitoring, deployment, codedeploy)
+- Automated provisioning with Auto Scaling Groups
+- Security groups with dynamic admin IP whitelisting
+- IAM roles with SSM Parameter Store integration
+- Jenkins Configuration as Code (JCasC) - zero manual setup
 
 ### Observability Implementation
 - RED metrics (Rate, Errors, Duration) methodology
@@ -524,6 +533,7 @@ Monthly AWS costs (approximate):
 - 15-day metrics retention with 5GB storage limit
 
 ### CI/CD Best Practices
+- Jenkins Configuration as Code (JCasC) - fully automated setup
 - Declarative Jenkins pipeline with 8 stages
 - AWS CodeDeploy Blue-Green deployment
 - Zero-downtime deployments with ALB traffic shifting
@@ -531,6 +541,7 @@ Monthly AWS costs (approximate):
 - Docker layer caching for faster builds
 - Containerized testing for consistency
 - Automated health checks via ALB
+- Credentials auto-configured from AWS metadata
 
 ### Security Measures
 - Non-root container execution
@@ -544,27 +555,26 @@ Monthly AWS costs (approximate):
 ### Grafana
 Password is auto-generated during deployment:
 ```bash
-ssh -i ~/.ssh/id_rsa ec2-user@<APP_SERVER_IP>
+ssh -i ~/.ssh/id_rsa ec2-user@<MONITORING_SERVER_IP>
 cat ~/monitoring/.env | grep GF_SECURITY_ADMIN_PASSWORD
 ```
 
-### Jenkins
-Initial admin password:
+### Jenkins (Fully Automated with JCasC)
+Admin password stored in SSM Parameter Store:
 ```bash
-ssh -i ~/.ssh/id_rsa ec2-user@<JENKINS_SERVER_IP>
-sudo cat /var/lib/jenkins/secrets/initialAdminPassword
+aws ssm get-parameter --name /taskflow/jenkins-admin-password --with-decryption --query 'Parameter.Value' --output text
 ```
 
-### Required Jenkins Credentials
-- `aws-credentials`: AWS Access Key ID and Secret
-- `aws-region`: AWS region (e.g., eu-west-1)
-- `aws-account-id`: Your AWS account ID
-- `app-name`: Application name (e.g., taskflow)
-- `node-version`: Node.js version (e.g., 18)
-- `app-port`: Application port (e.g., 5000)
-- `integration-test-port`: Test port (e.g., 5001)
-- `health-check-timeout`: Health check timeout in seconds
-- `health-check-interval`: Health check interval in seconds
+**Username**: admin
+
+**All credentials auto-configured** via Jenkins Configuration as Code (JCasC):
+- AWS credentials (from instance profile)
+- AWS region, account ID
+- App server IPs (public and private)
+- Monitoring server IP
+- SSH key for deployments
+- Application settings (ports, timeouts)
+- No manual credential configuration needed!
 
 ## Troubleshooting
 

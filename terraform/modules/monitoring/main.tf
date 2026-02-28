@@ -31,7 +31,7 @@ resource "null_resource" "deploy_monitoring" {
   triggers = {
     instance_id           = aws_instance.monitoring.id
     app_ip                = var.app_public_ip
-    # compose_file_sha      = filesha256("${path.root}/../monitoring/docker-compose.yml")
+    compose_file_sha      = filesha256("${path.root}/../monitoring/docker-compose.yml")
     prometheus_config_sha = filesha256("${path.root}/../monitoring/config/prometheus.yml")
   }
 

@@ -77,6 +77,13 @@ resource "aws_security_group" "taskflow" {
   }
 
   ingress {
+    from_port   = 3100
+    to_port     = 3100
+    protocol    = "tcp"
+    cidr_blocks = var.admin_cidr_blocks
+  }
+
+  ingress {
     from_port = 3100
     to_port   = 3100
     protocol  = "tcp"
@@ -88,6 +95,13 @@ resource "aws_security_group" "taskflow" {
     to_port   = 4318
     protocol  = "tcp"
     self      = true
+  }
+
+  ingress {
+    from_port   = 9100
+    to_port     = 9100
+    protocol    = "tcp"
+    cidr_blocks = var.admin_cidr_blocks
   }
 
   ingress {

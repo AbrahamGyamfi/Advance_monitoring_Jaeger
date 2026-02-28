@@ -42,33 +42,3 @@ output "codedeploy_app_name" {
 output "deployment_group_name" {
   value = try(module.codedeploy[0].deployment_group_name, "")
 }
-
-output "alb_url" {
-  description = "Application Load Balancer URL"
-  value       = module.ecs.alb_url
-}
-
-output "alb_dns_name" {
-  description = "ALB DNS name"
-  value       = module.ecs.alb_dns_name
-}
-
-output "ecs_cluster_name" {
-  description = "ECS cluster name"
-  value       = module.ecs.cluster_name
-}
-
-output "ecs_service_name" {
-  description = "ECS service name"
-  value       = module.ecs.service_name
-}
-
-output "codedeploy_app_name" {
-  description = "CodeDeploy application name"
-  value       = module.ecs.codedeploy_app_name
-}
-
-output "codedeploy_deployment_group" {
-  description = "CodeDeploy deployment group name"
-  value       = module.ecs.codedeploy_deployment_group_name
-}
