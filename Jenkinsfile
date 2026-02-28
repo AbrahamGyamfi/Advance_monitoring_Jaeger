@@ -270,26 +270,21 @@ pipeline {
                         string(credentialsId: 'aws-account-id', variable: 'AWS_ACCOUNT_ID')
                     ]) {
                         sh """
-                            # Create deployment bundle
                             zip -r deployment-${BUILD_NUMBER}.zip docker-compose.yml appspec.yml
                             
-                            # Upload to S3
                             aws s3 cp deployment-${BUILD_NUMBER}.zip s3://taskflow-codedeploy-\${AWS_ACCOUNT_ID}/
                             
-                            # Trigger CodeDeploy Blue-Green deployment
-                            aws deploy create-deployment \\
-                                --application-name taskflow-app \\
-                                --deployment-group-name taskflow-blue-green \\
-                                --s3-location bucket=taskflow-codedeploy-\${AWS_ACCOUNT_ID},key=deployment-${BUILD_NUMBER}.zip,bundleType=zip \\
-                                --region \${AWS_REGION} \\
+                            aws deploy create-deployment \
+                                --application-name taskflow-app \
+                                --deployment-group-name taskflow-blue-green \
+                                --s3-location bucket=taskflow-codedeploy-\${AWS_ACCOUNT_ID},key=deployment-${BUILD_NUMBER}.zip,bundleType=zip \
+                                --region \${AWS_REGION} \
                                 --output json > deployment-output.json
                             
-                            # Get deployment ID
-                            DEPLOYMENT_ID=\\\$(cat deployment-output.json | grep -o '"deploymentId": "[^"]*' | cut -d'"' -f4)
-                            echo "Deployment ID: \\\$DEPLOYMENT_ID"
+                            DEPLOYMENT_ID=\$(cat deployment-output.json | grep -o '"deploymentId": "[^"]*' | cut -d'"' -f4)
+                            echo "Deployment ID: \${DEPLOYMENT_ID}"
                             
-                            # Wait for deployment to complete
-                            aws deploy wait deployment-successful --deployment-id \\\$DEPLOYMENT_ID --region \${AWS_REGION}
+                            aws deploy wait deployment-successful --deployment-id \${DEPLOYMENT_ID} --region \${AWS_REGION}
                             echo "Blue-Green deployment completed successfully!"
                         """
                     }
