@@ -31,6 +31,18 @@ pipeline {
             }
         }
         
+        stage('Secret Scan') {
+            steps {
+                script {
+                    echo 'Scanning for secrets with Gitleaks...'
+                    sh '''
+                        chmod +x security-scans/gitleaks-scan.sh
+                        ./security-scans/gitleaks-scan.sh
+                    '''
+                }
+            }
+        }
+        
         stage('Build Docker Images') {
             parallel {
                 stage('Build Backend') {
@@ -81,6 +93,84 @@ pipeline {
                                             -t \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-frontend:${BUILD_NUMBER} .
                                     """
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Container Security Scan') {
+            parallel {
+                stage('Scan Backend') {
+                    steps {
+                        script {
+                            echo 'Scanning backend image with Trivy...'
+                            withCredentials([
+                                string(credentialsId: 'aws-region', variable: 'AWS_REGION'),
+                                string(credentialsId: 'aws-account-id', variable: 'AWS_ACCOUNT_ID'),
+                                string(credentialsId: 'app-name', variable: 'APP_NAME')
+                            ]) {
+                                sh """
+                                    chmod +x security-scans/trivy-scan.sh
+                                    ./security-scans/trivy-scan.sh \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-backend:${BUILD_NUMBER} backend
+                                """
+                            }
+                        }
+                    }
+                }
+                stage('Scan Frontend') {
+                    steps {
+                        script {
+                            echo 'Scanning frontend image with Trivy...'
+                            withCredentials([
+                                string(credentialsId: 'aws-region', variable: 'AWS_REGION'),
+                                string(credentialsId: 'aws-account-id', variable: 'AWS_ACCOUNT_ID'),
+                                string(credentialsId: 'app-name', variable: 'APP_NAME')
+                            ]) {
+                                sh """
+                                    chmod +x security-scans/trivy-scan.sh
+                                    ./security-scans/trivy-scan.sh \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-frontend:${BUILD_NUMBER} frontend
+                                """
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('Generate SBOM') {
+            parallel {
+                stage('Backend SBOM') {
+                    steps {
+                        script {
+                            echo 'Generating backend SBOM...'
+                            withCredentials([
+                                string(credentialsId: 'aws-region', variable: 'AWS_REGION'),
+                                string(credentialsId: 'aws-account-id', variable: 'AWS_ACCOUNT_ID'),
+                                string(credentialsId: 'app-name', variable: 'APP_NAME')
+                            ]) {
+                                sh """
+                                    chmod +x security-scans/sbom-generate.sh
+                                    ./security-scans/sbom-generate.sh \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-backend:${BUILD_NUMBER} backend
+                                """
+                            }
+                        }
+                    }
+                }
+                stage('Frontend SBOM') {
+                    steps {
+                        script {
+                            echo 'Generating frontend SBOM...'
+                            withCredentials([
+                                string(credentialsId: 'aws-region', variable: 'AWS_REGION'),
+                                string(credentialsId: 'aws-account-id', variable: 'AWS_ACCOUNT_ID'),
+                                string(credentialsId: 'app-name', variable: 'APP_NAME')
+                            ]) {
+                                sh """
+                                    chmod +x security-scans/sbom-generate.sh
+                                    ./security-scans/sbom-generate.sh \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-frontend:${BUILD_NUMBER} frontend
+                                """
                             }
                         }
                     }
@@ -316,6 +406,9 @@ pipeline {
     post {
         always {
             script {
+                echo 'Archiving security reports...'
+                archiveArtifacts artifacts: 'trivy-*-report.json,sbom-*.json,gitleaks-report.json', allowEmptyArchive: true
+                
                 echo 'Cleaning up...'
                 sh """
                     # Remove test containers
