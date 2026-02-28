@@ -270,7 +270,7 @@ pipeline {
                         string(credentialsId: 'aws-account-id', variable: 'AWS_ACCOUNT_ID')
                     ]) {
                         sh """
-                            zip -r deployment-${BUILD_NUMBER}.zip docker-compose.yml appspec.yml
+                            zip -r deployment-${BUILD_NUMBER}.zip docker-compose.yml appspec.yml hooks/
                             
                             aws s3 cp deployment-${BUILD_NUMBER}.zip s3://taskflow-codedeploy-\${AWS_ACCOUNT_ID}/
                             
