@@ -353,16 +353,13 @@ pipeline {
                     echo '=================================='
                     echo "Duration: ${duration}s (${duration/60}m)"
                     echo "Build: #${BUILD_NUMBER}"
-                    echo "Backend: ${BACKEND_IMAGE}:${IMAGE_TAG}"
-                    echo "Frontend: ${FRONTEND_IMAGE}:${IMAGE_TAG}"
-                    echo "Deployed to: http://${EC2_HOST}"
-                    echo "Metrics: http://${EC2_HOST}:5000/metrics"
+                    echo "Deployed via CodeDeploy Blue-Green"
+                    echo "Application URL: http://taskflow-alb-365219180.eu-west-1.elb.amazonaws.com"
                 } catch (Exception e) {
                     echo '=================================='
                     echo 'PIPELINE COMPLETED SUCCESSFULLY!'
                     echo '=================================='
                     echo "Build: #${BUILD_NUMBER}"
-                    echo "Deployed to: http://${EC2_HOST}"
                 }
             }
         }
