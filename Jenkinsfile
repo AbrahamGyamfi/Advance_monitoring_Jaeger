@@ -7,21 +7,7 @@ pipeline {
     
     environment {
         AWS_CREDENTIALS_ID = 'aws-credentials'
-        AWS_REGION = 'eu-west-1'
-        AWS_ACCOUNT_ID = '697863031884'
-        APP_NAME = 'taskflow'
-        APP_PORT = '5000'
-        INTEGRATION_TEST_PORT = '5001'
-        HEALTH_CHECK_TIMEOUT = '60'
-        HEALTH_CHECK_INTERVAL = '5'
-        EC2_USER = 'ec2-user'
-        APP_PRIVATE_IP = '172.31.30.225'
-        
-        ECR_REGISTRY = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
-        BACKEND_IMAGE = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${APP_NAME}-backend"
-        FRONTEND_IMAGE = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${APP_NAME}-frontend"
         IMAGE_TAG = "${BUILD_NUMBER}"
-        
         BUILD_START_TIME = "${System.currentTimeMillis()}"
     }
     
@@ -108,10 +94,14 @@ pipeline {
                     steps {
                         script {
                             echo 'Running backend unit tests...'
-                            dir('backend') {
-                                sh """
-                                    docker run --rm -v \$(pwd):/app -w /app node:18-alpine sh -c 'npm ci && npm test'
-                                """
+                            withCredentials([
+                                string(credentialsId: 'node-version', variable: 'NODE_VERSION')
+                            ]) {
+                                dir('backend') {
+                                    sh """
+                                        docker run --rm -v \$(pwd):/app -w /app node:\${NODE_VERSION}-alpine sh -c 'npm ci && npm test'
+                                    """
+                                }
                             }
                         }
                     }
@@ -120,10 +110,14 @@ pipeline {
                     steps {
                         script {
                             echo 'Running frontend unit tests...'
-                            dir('frontend') {
-                                sh """
-                                    docker run --rm -v \$(pwd):/app -w /app node:18-alpine sh -c 'npm ci && CI=true npm test -- --passWithNoTests'
-                                """
+                            withCredentials([
+                                string(credentialsId: 'node-version', variable: 'NODE_VERSION')
+                            ]) {
+                                dir('frontend') {
+                                    sh """
+                                        docker run --rm -v \$(pwd):/app -w /app node:\${NODE_VERSION}-alpine sh -c 'npm ci && CI=true npm test -- --passWithNoTests'
+                                    """
+                                }
                             }
                         }
                     }
@@ -137,10 +131,14 @@ pipeline {
                     steps {
                         script {
                             echo 'Running backend linting...'
-                            dir('backend') {
-                                sh """
-                                    docker run --rm -v \$(pwd):/app -w /app node:18-alpine sh -c 'npm ci && npm run lint'
-                                """
+                            withCredentials([
+                                string(credentialsId: 'node-version', variable: 'NODE_VERSION')
+                            ]) {
+                                dir('backend') {
+                                    sh """
+                                        docker run --rm -v \$(pwd):/app -w /app node:\${NODE_VERSION}-alpine sh -c 'npm ci && npm run lint'
+                                    """
+                                }
                             }
                         }
                     }
@@ -149,10 +147,14 @@ pipeline {
                     steps {
                         script {
                             echo 'Running frontend linting...'
-                            dir('frontend') {
-                                sh """
-                                    docker run --rm -v \$(pwd):/app -w /app node:18-alpine sh -c 'npm ci --legacy-peer-deps && npm run lint'
-                                """
+                            withCredentials([
+                                string(credentialsId: 'node-version', variable: 'NODE_VERSION')
+                            ]) {
+                                dir('frontend') {
+                                    sh """
+                                        docker run --rm -v \$(pwd):/app -w /app node:\${NODE_VERSION}-alpine sh -c 'npm ci --legacy-peer-deps && npm run lint'
+                                    """
+                                }
                             }
                         }
                     }
@@ -161,10 +163,16 @@ pipeline {
                     steps {
                         script {
                             echo 'Testing Docker images...'
-                            sh """
-                                docker run --rm ${BACKEND_IMAGE}:${IMAGE_TAG} node --version
-                                docker run --rm ${FRONTEND_IMAGE}:${IMAGE_TAG} nginx -v
-                            """
+                            withCredentials([
+                                string(credentialsId: 'aws-region', variable: 'AWS_REGION'),
+                                string(credentialsId: 'aws-account-id', variable: 'AWS_ACCOUNT_ID'),
+                                string(credentialsId: 'app-name', variable: 'APP_NAME')
+                            ]) {
+                                sh """
+                                    docker run --rm \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-backend:${IMAGE_TAG} node --version
+                                    docker run --rm \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-frontend:${IMAGE_TAG} nginx -v
+                                """
+                            }
                         }
                     }
                 }
@@ -175,22 +183,32 @@ pipeline {
             steps {
                 script {
                     echo 'Running integration tests...'
-                    sh '''
-                        set -euo pipefail
-                        CONTAINER_NAME="test-backend-${BUILD_NUMBER}"
-                        cleanup() { docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true; }
-                        trap cleanup EXIT
-                        cleanup
-                        docker run -d --name "$CONTAINER_NAME" -p ${INTEGRATION_TEST_PORT}:${APP_PORT} "${BACKEND_IMAGE}:${IMAGE_TAG}"
-                        MAX_ITERATIONS=$((${HEALTH_CHECK_TIMEOUT} / ${HEALTH_CHECK_INTERVAL}))
-                        for i in $(seq 1 $MAX_ITERATIONS); do
-                            if curl -fsS http://localhost:${INTEGRATION_TEST_PORT}/health >/dev/null 2>&1; then break; fi
-                            if [ "$i" -eq "$MAX_ITERATIONS" ]; then docker logs "$CONTAINER_NAME"; exit 1; fi
-                            sleep ${HEALTH_CHECK_INTERVAL}
-                        done
-                        curl -fsS http://localhost:${INTEGRATION_TEST_PORT}/api/tasks
-                        echo "✅ Integration tests passed!"
-                    '''
+                    withCredentials([
+                        string(credentialsId: 'aws-region', variable: 'AWS_REGION'),
+                        string(credentialsId: 'aws-account-id', variable: 'AWS_ACCOUNT_ID'),
+                        string(credentialsId: 'app-name', variable: 'APP_NAME'),
+                        string(credentialsId: 'app-port', variable: 'APP_PORT'),
+                        string(credentialsId: 'integration-test-port', variable: 'INTEGRATION_TEST_PORT'),
+                        string(credentialsId: 'health-check-timeout', variable: 'HEALTH_CHECK_TIMEOUT'),
+                        string(credentialsId: 'health-check-interval', variable: 'HEALTH_CHECK_INTERVAL')
+                    ]) {
+                        sh '''
+                            set -euo pipefail
+                            CONTAINER_NAME="test-backend-${BUILD_NUMBER}"
+                            cleanup() { docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true; }
+                            trap cleanup EXIT
+                            cleanup
+                            docker run -d --name "$CONTAINER_NAME" -p ${INTEGRATION_TEST_PORT}:${APP_PORT} "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${APP_NAME}-backend:${BUILD_NUMBER}"
+                            MAX_ITERATIONS=$((${HEALTH_CHECK_TIMEOUT} / ${HEALTH_CHECK_INTERVAL}))
+                            for i in $(seq 1 $MAX_ITERATIONS); do
+                                if curl -fsS http://localhost:${INTEGRATION_TEST_PORT}/health >/dev/null 2>&1; then break; fi
+                                if [ "$i" -eq "$MAX_ITERATIONS" ]; then docker logs "$CONTAINER_NAME"; exit 1; fi
+                                sleep ${HEALTH_CHECK_INTERVAL}
+                            done
+                            curl -fsS http://localhost:${INTEGRATION_TEST_PORT}/api/tasks
+                            echo "✅ Integration tests passed!"
+                        '''
+                    }
                 }
             }
         }
@@ -201,12 +219,17 @@ pipeline {
                     steps {
                         script {
                             echo 'Pushing backend images to ECR...'
-                            withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"]]) {
+                            withCredentials([
+                                [$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"],
+                                string(credentialsId: 'aws-region', variable: 'AWS_REGION'),
+                                string(credentialsId: 'aws-account-id', variable: 'AWS_ACCOUNT_ID'),
+                                string(credentialsId: 'app-name', variable: 'APP_NAME')
+                            ]) {
                                 sh """
-                                    aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
-                                    docker push ${BACKEND_IMAGE}:${IMAGE_TAG}
-                                    docker tag ${BACKEND_IMAGE}:${IMAGE_TAG} ${BACKEND_IMAGE}:latest
-                                    docker push ${BACKEND_IMAGE}:latest
+                                    aws ecr get-login-password --region \${AWS_REGION} | docker login --username AWS --password-stdin \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com
+                                    docker push \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-backend:${IMAGE_TAG}
+                                    docker tag \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-backend:${IMAGE_TAG} \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-backend:latest
+                                    docker push \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-backend:latest
                                 """
                             }
                             echo "Backend images pushed!"
@@ -217,12 +240,17 @@ pipeline {
                     steps {
                         script {
                             echo 'Pushing frontend images to ECR...'
-                            withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"]]) {
+                            withCredentials([
+                                [$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"],
+                                string(credentialsId: 'aws-region', variable: 'AWS_REGION'),
+                                string(credentialsId: 'aws-account-id', variable: 'AWS_ACCOUNT_ID'),
+                                string(credentialsId: 'app-name', variable: 'APP_NAME')
+                            ]) {
                                 sh """
-                                    aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
-                                    docker push ${FRONTEND_IMAGE}:${IMAGE_TAG}
-                                    docker tag ${FRONTEND_IMAGE}:${IMAGE_TAG} ${FRONTEND_IMAGE}:latest
-                                    docker push ${FRONTEND_IMAGE}:latest
+                                    aws ecr get-login-password --region \${AWS_REGION} | docker login --username AWS --password-stdin \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com
+                                    docker push \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-frontend:${IMAGE_TAG}
+                                    docker tag \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-frontend:${IMAGE_TAG} \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-frontend:latest
+                                    docker push \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-frontend:latest
                                 """
                             }
                             echo "Frontend images pushed!"
@@ -236,28 +264,32 @@ pipeline {
             steps {
                 script {
                     echo 'Creating deployment package...'
-                    withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"]]) {
+                    withCredentials([
+                        [$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"],
+                        string(credentialsId: 'aws-region', variable: 'AWS_REGION'),
+                        string(credentialsId: 'aws-account-id', variable: 'AWS_ACCOUNT_ID')
+                    ]) {
                         sh """
                             # Create deployment bundle
                             zip -r deployment-${BUILD_NUMBER}.zip docker-compose.yml appspec.yml
                             
                             # Upload to S3
-                            aws s3 cp deployment-${BUILD_NUMBER}.zip s3://taskflow-codedeploy-${AWS_ACCOUNT_ID}/
+                            aws s3 cp deployment-${BUILD_NUMBER}.zip s3://taskflow-codedeploy-\${AWS_ACCOUNT_ID}/
                             
                             # Trigger CodeDeploy Blue-Green deployment
-                            aws deploy create-deployment \
-                                --application-name taskflow-app \
-                                --deployment-group-name taskflow-blue-green \
-                                --s3-location bucket=taskflow-codedeploy-${AWS_ACCOUNT_ID},key=deployment-${BUILD_NUMBER}.zip,bundleType=zip \
-                                --region ${AWS_REGION} \
+                            aws deploy create-deployment \\
+                                --application-name taskflow-app \\
+                                --deployment-group-name taskflow-blue-green \\
+                                --s3-location bucket=taskflow-codedeploy-\${AWS_ACCOUNT_ID},key=deployment-${BUILD_NUMBER}.zip,bundleType=zip \\
+                                --region \${AWS_REGION} \\
                                 --output json > deployment-output.json
                             
                             # Get deployment ID
-                            DEPLOYMENT_ID=\$(cat deployment-output.json | grep -o '"deploymentId": "[^"]*' | cut -d'"' -f4)
-                            echo "Deployment ID: \$DEPLOYMENT_ID"
+                            DEPLOYMENT_ID=\\\$(cat deployment-output.json | grep -o '"deploymentId": "[^"]*' | cut -d'"' -f4)
+                            echo "Deployment ID: \\\$DEPLOYMENT_ID"
                             
                             # Wait for deployment to complete
-                            aws deploy wait deployment-successful --deployment-id \$DEPLOYMENT_ID --region ${AWS_REGION}
+                            aws deploy wait deployment-successful --deployment-id \\\$DEPLOYMENT_ID --region \${AWS_REGION}
                             echo "Blue-Green deployment completed successfully!"
                         """
                     }
@@ -269,16 +301,22 @@ pipeline {
             steps {
                 script {
                     echo 'Running health checks...'
-                    def healthStatus = sh(
-                        script: """
-                            ssh -i /var/lib/jenkins/.ssh/id_rsa -o StrictHostKeyChecking=no ${EC2_USER}@${APP_PRIVATE_IP} 'curl -s http://localhost:${APP_PORT}/health | grep healthy'
-                        """,
-                        returnStatus: true
-                    )
-                    if (healthStatus == 0) {
-                        echo "Application is healthy!"
-                    } else {
-                        error "Health check failed!"
+                    withCredentials([
+                        string(credentialsId: 'ec2-user', variable: 'EC2_USER'),
+                        string(credentialsId: 'app-private-ip', variable: 'APP_PRIVATE_IP'),
+                        string(credentialsId: 'app-port', variable: 'APP_PORT')
+                    ]) {
+                        def healthStatus = sh(
+                            script: """
+                                ssh -i /var/lib/jenkins/.ssh/id_rsa -o StrictHostKeyChecking=no \${EC2_USER}@\${APP_PRIVATE_IP} 'curl -s http://localhost:\${APP_PORT}/health | grep healthy'
+                            """,
+                            returnStatus: true
+                        )
+                        if (healthStatus == 0) {
+                            echo "Application is healthy!"
+                        } else {
+                            error "Health check failed!"
+                        }
                     }
                 }
             }
