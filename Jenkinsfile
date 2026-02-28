@@ -31,14 +31,47 @@ pipeline {
             }
         }
         
-        stage('Secret Scan') {
-            steps {
-                script {
-                    echo 'Scanning for secrets with Gitleaks...'
-                    sh '''
-                        chmod +x security-scans/gitleaks-scan.sh
-                        ./security-scans/gitleaks-scan.sh
-                    '''
+        stage('Security Scans') {
+            parallel {
+                stage('Secret Scan') {
+                    steps {
+                        script {
+                            echo 'Scanning for secrets with Gitleaks...'
+                            sh '''
+                                chmod +x security-scans/gitleaks-scan.sh
+                                ./security-scans/gitleaks-scan.sh
+                            '''
+                        }
+                    }
+                }
+                stage('SAST - Backend') {
+                    steps {
+                        script {
+                            echo 'Running SonarQube SAST on backend...'
+                            withCredentials([
+                                string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN'),
+                                string(credentialsId: 'sonar-host-url', variable: 'SONAR_HOST_URL')
+                            ]) {
+                                sh '''
+                                    chmod +x security-scans/sonarqube-scan.sh
+                                    ./security-scans/sonarqube-scan.sh taskflow-backend backend
+                                '''
+                            }
+                        }
+                    }
+                }
+                stage('SCA - Backend') {
+                    steps {
+                        script {
+                            echo 'Running Snyk SCA on backend...'
+                            withCredentials([string(credentialsId: 'snyk-token', variable: 'SNYK_TOKEN')]) {
+                                sh '''
+                                    chmod +x security-scans/snyk-scan.sh
+                                    ./security-scans/snyk-scan.sh backend backend
+                                '''
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -407,7 +440,7 @@ pipeline {
         always {
             script {
                 echo 'Archiving security reports...'
-                archiveArtifacts artifacts: 'trivy-*-report.json,sbom-*.json,gitleaks-report.json', allowEmptyArchive: true
+                archiveArtifacts artifacts: 'trivy-*-report.json,sbom-*.json,gitleaks-report.json,snyk-*-report.json', allowEmptyArchive: true
                 
                 echo 'Cleaning up...'
                 sh """
