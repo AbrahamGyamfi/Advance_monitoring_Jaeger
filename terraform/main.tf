@@ -25,6 +25,14 @@ module "networking" {
   admin_cidr_blocks   = var.admin_cidr_blocks
 }
 
+module "security" {
+  source = "./modules/security"
+
+  cloudtrail_bucket_name = var.cloudtrail_bucket_name
+  aws_account_id         = var.aws_account_id
+  ssh_private_key        = file(var.private_key_path)
+}
+
 module "compute" {
   source = "./modules/compute"
 
@@ -34,14 +42,6 @@ module "compute" {
   security_group_name          = module.networking.security_group_name
   app_iam_instance_profile     = module.security.iam_instance_profile
   jenkins_iam_instance_profile = module.security.jenkins_instance_profile
-}
-
-module "security" {
-  source = "./modules/security"
-
-  cloudtrail_bucket_name = var.cloudtrail_bucket_name
-  aws_account_id         = var.aws_account_id
-  ssh_private_key        = file(var.private_key_path)
 }
 
 module "monitoring" {
