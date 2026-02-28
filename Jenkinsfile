@@ -6,28 +6,12 @@ pipeline {
     }
     
     environment {
-        AWS_REGION = credentials('aws-region')
-        AWS_ACCOUNT_ID = credentials('aws-account-id')
-        APP_SERVER_IP = credentials('app-server-ip')
-        APP_PRIVATE_IP = credentials('app-private-ip')
-        MONITORING_HOST = credentials('monitoring-host')
-        ECR_REGISTRY = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
         AWS_CREDENTIALS_ID = 'aws-credentials'
         
-        APP_NAME = credentials('app-name')
-        NODE_VERSION = credentials('node-version')
-        APP_PORT = credentials('app-port')
-        INTEGRATION_TEST_PORT = credentials('integration-test-port')
-        HEALTH_CHECK_TIMEOUT = credentials('health-check-timeout')
-        HEALTH_CHECK_INTERVAL = credentials('health-check-interval')
-        EC2_USER = credentials('ec2-user')
-        
-        BACKEND_IMAGE = "${ECR_REGISTRY}/${APP_NAME}-backend"
-        FRONTEND_IMAGE = "${ECR_REGISTRY}/${APP_NAME}-frontend"
+        BACKEND_IMAGE = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${APP_NAME}-backend"
+        FRONTEND_IMAGE = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${APP_NAME}-frontend"
         IMAGE_TAG = "${BUILD_NUMBER}"
         
-        EC2_CREDENTIALS_ID = 'app-server-ssh'
-        EC2_HOST = "${APP_SERVER_IP}"
         BUILD_START_TIME = "${System.currentTimeMillis()}"
     }
     
@@ -57,17 +41,22 @@ pipeline {
                     steps {
                         script {
                             echo 'Building backend Docker image with layer caching...'
-                            withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"]]) {
+                            withCredentials([
+                                [$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-credentials'],
+                                string(credentialsId: 'aws-region', variable: 'AWS_REGION'),
+                                string(credentialsId: 'aws-account-id', variable: 'AWS_ACCOUNT_ID'),
+                                string(credentialsId: 'app-name', variable: 'APP_NAME')
+                            ]) {
                                 dir('backend') {
                                     sh """
-                                        aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
-                                        docker pull ${BACKEND_IMAGE}:latest || true
+                                        aws ecr get-login-password --region \${AWS_REGION} | docker login --username AWS --password-stdin \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com
+                                        docker pull \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-backend:latest || true
                                         DOCKER_BUILDKIT=0 docker build \
-                                            --cache-from ${BACKEND_IMAGE}:latest \
+                                            --cache-from \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-backend:latest \
                                             --build-arg BUILD_DATE=\$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
                                             --build-arg VCS_REF=\${GIT_COMMIT} \
                                             --build-arg BUILD_NUMBER=\${BUILD_NUMBER} \
-                                            -t ${BACKEND_IMAGE}:${IMAGE_TAG} .
+                                            -t \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-backend:${BUILD_NUMBER} .
                                     """
                                 }
                             }
@@ -78,17 +67,22 @@ pipeline {
                     steps {
                         script {
                             echo 'Building frontend Docker image with layer caching...'
-                            withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"]]) {
+                            withCredentials([
+                                [$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-credentials'],
+                                string(credentialsId: 'aws-region', variable: 'AWS_REGION'),
+                                string(credentialsId: 'aws-account-id', variable: 'AWS_ACCOUNT_ID'),
+                                string(credentialsId: 'app-name', variable: 'APP_NAME')
+                            ]) {
                                 dir('frontend') {
                                     sh """
-                                        aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${ECR_REGISTRY}
-                                        docker pull ${FRONTEND_IMAGE}:latest || true
+                                        aws ecr get-login-password --region \${AWS_REGION} | docker login --username AWS --password-stdin \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com
+                                        docker pull \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-frontend:latest || true
                                         DOCKER_BUILDKIT=0 docker build \
-                                            --cache-from ${FRONTEND_IMAGE}:latest \
+                                            --cache-from \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-frontend:latest \
                                             --build-arg BUILD_DATE=\$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
                                             --build-arg VCS_REF=\${GIT_COMMIT} \
                                             --build-arg BUILD_NUMBER=\${BUILD_NUMBER} \
-                                            -t ${FRONTEND_IMAGE}:${IMAGE_TAG} .
+                                            -t \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-frontend:${BUILD_NUMBER} .
                                     """
                                 }
                             }
