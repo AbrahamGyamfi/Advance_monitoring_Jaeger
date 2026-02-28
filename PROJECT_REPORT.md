@@ -28,6 +28,9 @@ This report documents the implementation of a production-ready observability sta
 ### Instrumentation Implementation
 The backend application exports comprehensive telemetry:
 
+![Metrics Endpoint](Screenshots/metrics_endpoint.png)  
+*Figure 4: Prometheus-format metrics exposed at /metrics endpoint*
+
 **Metrics** (`backend/metrics.js`):
 - `taskflow_http_requests_total` - Counter for all HTTP requests
 - `taskflow_http_errors_total` - Counter for 4xx/5xx responses
@@ -61,6 +64,9 @@ The backend application exports comprehensive telemetry:
 2. **High Latency Alert**: p95 latency exceeded 300ms SLO, reaching 450ms
 3. **Request Rate**: Sustained traffic at ~200 requests/minute
 
+![Grafana Dashboard](Screenshots/Grafana_taskflow_dashboard.png)  
+*Figure 1: Grafana dashboard showing elevated error rate and latency metrics*
+
 **Alert Configuration** (`monitoring/config/alert_rules.yml`):
 ```yaml
 - alert: TaskflowHighErrorRate
@@ -71,6 +77,12 @@ The backend application exports comprehensive telemetry:
   expr: histogram_quantile(0.95, rate(taskflow_http_request_duration_seconds_bucket[5m])) > 0.3
   for: 10m
 ```
+
+![Prometheus Alerts](Screenshots/prometheus-alert-firing.png)  
+*Figure 2: Prometheus alerts firing for high error rate and latency*
+
+![Grafana Alerts](Screenshots/Grafana-alert-firing.png)  
+*Figure 3: Grafana visualization of active alerts*
 
 **Evidence**: Screenshots show both alerts firing in Prometheus and Grafana dashboards displaying elevated metrics.
 
@@ -90,6 +102,9 @@ The backend application exports comprehensive telemetry:
    - Searched Jaeger UI for trace_id
    - Found complete request span tree
    - Identified slow database query span (420ms duration)
+
+![Jaeger Trace](Screenshots/JAEGAR_DASHBOARD.png)  
+*Figure 5: Jaeger distributed trace showing request span breakdown and timing*
 
 **Trace Analysis** (Jaeger):
 ```
@@ -155,6 +170,26 @@ app.get('/api/tasks', (req, res) => {
 
 ## 3. Key Learnings & Recommendations
 
+### CI/CD Pipeline Integration
+
+The implementation includes automated Jenkins pipeline with CodeDeploy:
+
+![Jenkins Pipeline](Screenshots/PIPELINE_SUCCESS.png)  
+*Figure 6: Jenkins CI/CD pipeline with 8 automated stages successfully completed*
+
+### AWS Security Integration
+
+The implementation includes comprehensive AWS security services:
+
+![CloudWatch Logs](Screenshots/Cloudwatch-logs.png)  
+*Figure 7: Container logs streaming to CloudWatch*
+
+![CloudTrail Events](Screenshots/Cloudtrail_events.png)  
+*Figure 8: AWS API audit trail showing recent events*
+
+![GuardDuty Findings](Screenshots/GuardDutyFinding.png)  
+*Figure 9: GuardDuty threat detection dashboard*
+
 ### Observability Best Practices Demonstrated
 
 1. **Three Pillars Integration**: Successfully correlated metrics (Prometheus) → traces (Jaeger) → logs (Loki)
@@ -207,9 +242,21 @@ The system is production-ready with comprehensive monitoring, automated alerting
 
 ---
 
-**Appendix**: 
+**Appendix - Visual Evidence**: 
+
+### Monitoring Screenshots
+1. **Figure 1**: Grafana Dashboard - `Screenshots/Grafana_taskflow_dashboard.png`
+2. **Figure 2**: Prometheus Alerts - `Screenshots/prometheus-alert-firing.png`
+3. **Figure 3**: Grafana Alerts - `Screenshots/Grafana-alert-firing.png`
+4. **Figure 4**: Metrics Endpoint - `Screenshots/metrics_endpoint.png`
+5. **Figure 5**: Jaeger Distributed Trace - `Screenshots/JAEGAR_DASHBOARD.png`
+6. **Figure 6**: Jenkins CI/CD Pipeline - `Screenshots/PIPELINE_SUCCESS.png`
+7. **Figure 7**: CloudWatch Logs - `Screenshots/Cloudwatch-logs.png`
+8. **Figure 8**: CloudTrail Events - `Screenshots/Cloudtrail_events.png`
+9. **Figure 9**: GuardDuty Findings - `Screenshots/GuardDutyFinding.png`
+
+### Configuration Files
 - Grafana Dashboard: `monitoring/dashboards/taskflow-observability.json`
 - Prometheus Config: `monitoring/config/prometheus.yml`
 - Alert Rules: `monitoring/config/alert_rules.yml`
-- Screenshots: `Screenshots/` directory (13 files)
 - Source Code: `backend/` and `frontend/` directories
