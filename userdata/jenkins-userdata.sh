@@ -55,6 +55,10 @@ JENKINS_ADMIN_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
 # Get SSH private key from SSM Parameter Store (will be created by Terraform)
 SSH_PRIVATE_KEY=$(aws ssm get-parameter --region $REGION --name "/taskflow/ssh-private-key" --with-decryption --query 'Parameter.Value' --output text 2>/dev/null || echo "")
 
+# Get SonarQube and Snyk tokens from SSM
+SONAR_TOKEN=$(aws ssm get-parameter --region $REGION --name "/taskflow/sonar-token" --with-decryption --query 'Parameter.Value' --output text 2>/dev/null || echo "squ_placeholder")
+SNYK_TOKEN=$(aws ssm get-parameter --region $REGION --name "/taskflow/snyk-token" --with-decryption --query 'Parameter.Value' --output text 2>/dev/null || echo "snyk_placeholder")
+
 # Get AWS credentials from instance profile (already attached)
 AWS_ACCESS_KEY_ID=$(aws configure get aws_access_key_id || echo "")
 AWS_SECRET_ACCESS_KEY=$(aws configure get aws_secret_access_key || echo "")
@@ -132,6 +136,18 @@ credentials:
               scope: GLOBAL
               id: "ec2-user"
               secret: "ec2-user"
+          - string:
+              scope: GLOBAL
+              id: "sonar-token"
+              secret: "${SONAR_TOKEN}"
+          - string:
+              scope: GLOBAL
+              id: "sonar-host-url"
+              secret: "http://localhost:9000"
+          - string:
+              scope: GLOBAL
+              id: "snyk-token"
+              secret: "${SNYK_TOKEN}"
           - aws:
               scope: GLOBAL
               id: "aws-credentials"
