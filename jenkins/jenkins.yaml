@@ -120,6 +120,21 @@ credentials:
               id: "ec2-user"
               secret: "ec2-user"
               description: "EC2 SSH Username"
+          - string:
+              scope: GLOBAL
+              id: "sonar-token"
+              secret: "${SONAR_TOKEN}"
+              description: "SonarQube Authentication Token"
+          - string:
+              scope: GLOBAL
+              id: "sonar-host-url"
+              secret: "http://localhost:9000"
+              description: "SonarQube Host URL"
+          - string:
+              scope: GLOBAL
+              id: "snyk-token"
+              secret: "${SNYK_TOKEN}"
+              description: "Snyk API Token"
           - aws:
               scope: GLOBAL
               id: "aws-credentials"
