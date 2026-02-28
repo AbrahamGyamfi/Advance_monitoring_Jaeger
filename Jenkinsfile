@@ -100,7 +100,7 @@ pipeline {
                             echo 'Running backend unit tests...'
                             dir('backend') {
                                 sh """
-                                    docker run --rm -v \$(pwd):/app -w /app node:${NODE_VERSION}-alpine sh -c 'npm ci && npm test'
+                                    docker run --rm -v \$(pwd):/app -w /app node:18-alpine sh -c 'npm ci && npm test'
                                 """
                             }
                         }
@@ -112,7 +112,7 @@ pipeline {
                             echo 'Running frontend unit tests...'
                             dir('frontend') {
                                 sh """
-                                    docker run --rm -v \$(pwd):/app -w /app node:${NODE_VERSION}-alpine sh -c 'npm ci && CI=true npm test -- --passWithNoTests'
+                                    docker run --rm -v \$(pwd):/app -w /app node:18-alpine sh -c 'npm ci && CI=true npm test -- --passWithNoTests'
                                 """
                             }
                         }
@@ -129,7 +129,7 @@ pipeline {
                             echo 'Running backend linting...'
                             dir('backend') {
                                 sh """
-                                    docker run --rm -v \$(pwd):/app -w /app node:${NODE_VERSION}-alpine sh -c 'npm ci && npm run lint'
+                                    docker run --rm -v \$(pwd):/app -w /app node:18-alpine sh -c 'npm ci && npm run lint'
                                 """
                             }
                         }
@@ -141,7 +141,7 @@ pipeline {
                             echo 'Running frontend linting...'
                             dir('frontend') {
                                 sh """
-                                    docker run --rm -v \$(pwd):/app -w /app node:${NODE_VERSION}-alpine sh -c 'npm ci --legacy-peer-deps && npm run lint'
+                                    docker run --rm -v \$(pwd):/app -w /app node:18-alpine sh -c 'npm ci --legacy-peer-deps && npm run lint'
                                 """
                             }
                         }
