@@ -24,7 +24,9 @@ TaskFlow is a production-grade task management application demonstrating enterpr
 ### Key Features
 
 **Infrastructure & Automation**
-- Modular Terraform infrastructure (5 specialized modules)
+- Modular Terraform infrastructure (6 specialized modules)
+- AWS CodeDeploy Blue-Green deployment with Auto Scaling
+- Application Load Balancer for high availability
 - Jenkins CI/CD with 8-stage declarative pipeline
 - Multi-stage Docker builds (56% smaller images)
 - Parallel build execution and Docker layer caching
@@ -47,33 +49,106 @@ TaskFlow is a production-grade task management application demonstrating enterpr
 ## Architecture
 
 ```
-┌──────────────────┐
-│  Jenkins Server  │
-│  - CI/CD         │
-│  - Pipeline      │
-└────────┬─────────┘
-         │ Deploy
-         ▼
-┌──────────────────────────────────────────────────────────┐
-│              App Server (Single Host)                     │
-│  ┌─────────────────┐  ┌──────────────────┐              │
-│  │ Application     │  │ Monitoring Stack │              │
-│  │ - Backend       │  │ - Prometheus     │              │
-│  │ - Frontend      │  │ - Grafana        │              │
-│  │ - Node Exporter │  │ - Jaeger         │              │
-│  └─────────────────┘  │ - Loki           │              │
-│                       │ - Alertmanager   │              │
-│                       └──────────────────┘              │
-└────────────────────────┬─────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                           GitHub Repository                                  │
+│                     (Source Code + Jenkinsfile)                              │
+└────────────────────────────────┬─────────────────────────────────────────────┘
+                                 │ Webhook Trigger
+                                 ▼
+                    ┌────────────────────────────┐
+                    │   Jenkins CI/CD Server     │
+                    │   ─────────────────────    │
+                    │   • Build Docker Images    │
+                    │   • Run Tests (31 tests)   │
+                    │   • Push to ECR            │
+                    │   • Trigger CodeDeploy     │
+                    └────────────┬───────────────┘
+                                 │ Deploy
+                                 ▼
+            ┌────────────────────────────────────────────┐
+            │      AWS CodeDeploy (Blue-Green)          │
+            │      ─────────────────────────────         │
+            │      • Download from S3                    │
+            │      • Create Green ASG                    │
+            │      • Health Check                        │
+            │      • Traffic Shift (ALB)                 │
+            └────────────┬───────────────────────────────┘
                          │
                          ▼
-                  ┌─────────────────┐
-                  │  AWS Services   │
-                  │  - CloudWatch   │
-                  │  - CloudTrail   │
-                  │  - GuardDuty    │
-                  │  - ECR          │
-                  └─────────────────┘
+        ┌────────────────────────────────────────────────────────┐
+        │         Application Load Balancer (ALB)                │
+        │         ──────────────────────────────                 │
+        │         • Port 80 (HTTP)                               │
+        │         • Health Checks: /health on port 5000          │
+        │         • Blue/Green Target Groups                     │
+        │         • Zero-downtime deployments                    │
+        └────────────┬───────────────────────────────────────────┘
+                     │ Route Traffic
+                     ▼
+    ┌────────────────────────────────────────────────────────────────┐
+    │              Auto Scaling Group (1-2 instances)                │
+    │              ──────────────────────────────────                │
+    │                                                                │
+    │  ┌──────────────────────────────────────────────────────┐    │
+    │  │         EC2 Instance (t3.micro)                      │    │
+    │  │         ──────────────────────                       │    │
+    │  │                                                      │    │
+    │  │  ┌────────────────────┐  ┌──────────────────────┐  │    │
+    │  │  │   Application      │  │   Node Exporter      │  │    │
+    │  │  │   ─────────────    │  │   ──────────────     │  │    │
+    │  │  │   • Backend:5000   │  │   • Metrics:9100     │  │    │
+    │  │  │   • Frontend:80    │  │   • System Stats     │  │    │
+    │  │  │   • Docker Compose │  │                      │  │    │
+    │  │  └────────────────────┘  └──────────────────────┘  │    │
+    │  │                                                      │    │
+    │  │  IAM Role: taskflow-cloudwatch-role                 │    │
+    │  │  • CloudWatch Logs Write                            │    │
+    │  │  • ECR Pull Images                                  │    │
+    │  │  • S3 Read (CodeDeploy)                             │    │
+    │  └──────────────────────────────────────────────────────┘    │
+    └────────────────────────────────────────────────────────────────┘
+                     │ Metrics & Logs
+                     ▼
+    ┌────────────────────────────────────────────────────────────────┐
+    │         Monitoring Server (EC2 t3.small)                       │
+    │         ────────────────────────────────                       │
+    │                                                                │
+    │  ┌──────────────────┐  ┌──────────────────┐                  │
+    │  │  Prometheus:9090 │  │  Grafana:3000    │                  │
+    │  │  ───────────────  │  │  ─────────────   │                  │
+    │  │  • Scrape Metrics │  │  • Dashboards    │                  │
+    │  │  • Alert Rules    │  │  • Visualize     │                  │
+    │  │  • 15s Interval   │  │  • Query Logs    │                  │
+    │  └──────────────────┘  └──────────────────┘                  │
+    │                                                                │
+    │  ┌──────────────────┐  ┌──────────────────┐                  │
+    │  │  Jaeger:16686    │  │  Loki:3100       │                  │
+    │  │  ──────────────  │  │  ──────────────  │                  │
+    │  │  • Trace UI      │  │  • Log Storage   │                  │
+    │  │  • OTLP:4318     │  │  • Promtail      │                  │
+    │  └──────────────────┘  └──────────────────┘                  │
+    │                                                                │
+    │  ┌──────────────────┐                                         │
+    │  │ Alertmanager:9093│                                         │
+    │  │ ───────────────  │                                         │
+    │  │ • Alert Routing  │                                         │
+    │  │ • Notifications  │                                         │
+    │  └──────────────────┘                                         │
+    └────────────────────────────────────────────────────────────────┘
+                     │
+                     ▼
+    ┌────────────────────────────────────────────────────────────────┐
+    │                    AWS Services                                │
+    │                    ────────────                                │
+    │                                                                │
+    │  • ECR: Docker image registry                                  │
+    │  • S3: CloudTrail logs + CodeDeploy artifacts                  │
+    │  • CloudWatch Logs: Container logs (/aws/taskflow/docker)      │
+    │  • CloudTrail: API audit logging (90-day retention)            │
+    │  • GuardDuty: Threat detection                                 │
+    │  • IAM: Roles and policies                                     │
+    │  • CodeDeploy: Deployment orchestration                        │
+    └────────────────────────────────────────────────────────────────┘
 ```
 
 ## Technology Stack
@@ -86,8 +161,10 @@ TaskFlow is a production-grade task management application demonstrating enterpr
 ### Infrastructure & DevOps
 - **IaC**: Terraform 1.0+ with modular architecture
 - **CI/CD**: Jenkins declarative pipeline with parallel stages
+- **Deployment**: AWS CodeDeploy Blue-Green with Auto Scaling
+- **Load Balancer**: Application Load Balancer for HA
 - **Containers**: Docker multi-stage builds, Docker Compose 3.8
-- **Cloud**: AWS (EC2, ECR, S3, IAM, CloudWatch)
+- **Cloud**: AWS (EC2, ECR, S3, IAM, CloudWatch, CodeDeploy, ALB, ASG)
 - **Registry**: AWS ECR with automated image tagging
 
 ### Observability Stack
@@ -131,11 +208,11 @@ sudo cat /var/lib/jenkins/secrets/initialAdminPassword
 ```
 
 ### 4. Access Services
-- **Application**: http://<APP_SERVER_IP>
-- **Grafana**: http://<APP_SERVER_IP>:3000 (admin / see monitoring/.env)
-- **Prometheus**: http://<APP_SERVER_IP>:9090
-- **Jaeger**: http://<APP_SERVER_IP>:16686
-- **Alertmanager**: http://<APP_SERVER_IP>:9093
+- **Application**: http://taskflow-alb-365219180.eu-west-1.elb.amazonaws.com (via ALB)
+- **Grafana**: http://<MONITORING_SERVER_IP>:3000 (admin / see monitoring/.env)
+- **Prometheus**: http://<MONITORING_SERVER_IP>:9090
+- **Jaeger**: http://<MONITORING_SERVER_IP>:16686
+- **Alertmanager**: http://<MONITORING_SERVER_IP>:9093
 - **Jenkins**: http://<JENKINS_SERVER_IP>:8080
 
 ## Terraform Infrastructure
@@ -151,14 +228,18 @@ terraform/
     ├── compute/               # EC2 instances
     ├── deployment/            # App deployment provisioner
     ├── monitoring/            # Prometheus + Grafana
-    └── security/              # CloudTrail, GuardDuty, IAM
+    ├── security/              # CloudTrail, GuardDuty, IAM
+    └── codedeploy/            # ALB, ASG, CodeDeploy
 ```
 
 ### Resources Provisioned
-- 3 EC2 instances (Jenkins, App, Monitoring)
+- 2 EC2 instances (Jenkins, Monitoring)
+- Auto Scaling Group with 1-2 instances
+- Application Load Balancer
+- CodeDeploy application and deployment group
 - Security group with required ports
-- IAM roles for CloudWatch
-- S3 bucket for CloudTrail logs (encrypted, 90-day lifecycle)
+- IAM roles for CloudWatch and CodeDeploy
+- S3 buckets for CloudTrail and CodeDeploy artifacts
 - CloudWatch log groups
 - Imported existing CloudTrail and GuardDuty
 
@@ -277,8 +358,8 @@ histogram_quantile(0.95, sum(rate(taskflow_http_request_duration_seconds_bucket{
 4. **Quality** - ESLint + image verification
 5. **Integration** - API endpoint tests
 6. **Push** - Upload to ECR
-7. **Deploy** - SSH to EC2 with docker-compose
-8. **Health Check** - Verify deployment
+7. **Deploy** - CodeDeploy Blue-Green deployment
+8. **Health Check** - Verify via ALB
 
 ### Pipeline Optimizations
 - **Docker Layer Caching**: 40% faster builds (20min → 12min)
@@ -417,14 +498,15 @@ cd terraform && terraform destroy
 ## Cost Analysis
 
 Monthly AWS costs (approximate):
-- EC2 t3.micro (App): ~$7
 - EC2 t3.micro (Jenkins): ~$7
 - EC2 t3.small (Monitoring): ~$15
+- EC2 t3.micro (ASG instances): ~$7
+- Application Load Balancer: ~$16
 - CloudWatch Logs: ~$2
 - CloudTrail: ~$2
 - GuardDuty: ~$5
-- S3 Storage: ~$1
-- **Total**: ~$39/month
+- S3 Storage: ~$2
+- **Total**: ~$56/month
 
 ## Technical Highlights
 
@@ -443,10 +525,12 @@ Monthly AWS costs (approximate):
 
 ### CI/CD Best Practices
 - Declarative Jenkins pipeline with 8 stages
+- AWS CodeDeploy Blue-Green deployment
+- Zero-downtime deployments with ALB traffic shifting
 - Parallel execution for independent tasks
 - Docker layer caching for faster builds
 - Containerized testing for consistency
-- Automated health checks post-deployment
+- Automated health checks via ALB
 
 ### Security Measures
 - Non-root container execution
@@ -473,11 +557,14 @@ sudo cat /var/lib/jenkins/secrets/initialAdminPassword
 
 ### Required Jenkins Credentials
 - `aws-credentials`: AWS Access Key ID and Secret
-- `aws-region`: eu-west-1
+- `aws-region`: AWS region (e.g., eu-west-1)
 - `aws-account-id`: Your AWS account ID
-- `app-server-ip`: Public IP of app server
-- `app-private-ip`: Private IP of app server
-- `app-server-ssh`: SSH private key for EC2 access
+- `app-name`: Application name (e.g., taskflow)
+- `node-version`: Node.js version (e.g., 18)
+- `app-port`: Application port (e.g., 5000)
+- `integration-test-port`: Test port (e.g., 5001)
+- `health-check-timeout`: Health check timeout in seconds
+- `health-check-interval`: Health check interval in seconds
 
 ## Troubleshooting
 
