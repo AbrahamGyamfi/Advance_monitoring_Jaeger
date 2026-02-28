@@ -7,7 +7,17 @@ pipeline {
     
     environment {
         AWS_CREDENTIALS_ID = 'aws-credentials'
+        AWS_REGION = 'eu-west-1'
+        AWS_ACCOUNT_ID = '697863031884'
+        APP_NAME = 'taskflow'
+        APP_PORT = '5000'
+        INTEGRATION_TEST_PORT = '5001'
+        HEALTH_CHECK_TIMEOUT = '60'
+        HEALTH_CHECK_INTERVAL = '5'
+        EC2_USER = 'ec2-user'
+        APP_PRIVATE_IP = '172.31.30.225'
         
+        ECR_REGISTRY = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
         BACKEND_IMAGE = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${APP_NAME}-backend"
         FRONTEND_IMAGE = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${APP_NAME}-frontend"
         IMAGE_TAG = "${BUILD_NUMBER}"
