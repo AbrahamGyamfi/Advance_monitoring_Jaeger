@@ -1,31 +1,7 @@
 variable "cluster_name" {
   description = "ECS cluster name"
   type        = string
-}
-
-variable "service_name" {
-  description = "ECS service name"
-  type        = string
-}
-
-variable "task_family" {
-  description = "ECS task definition family"
-  type        = string
-}
-
-variable "backend_image" {
-  description = "Backend Docker image"
-  type        = string
-}
-
-variable "frontend_image" {
-  description = "Frontend Docker image"
-  type        = string
-}
-
-variable "vpc_id" {
-  description = "VPC ID"
-  type        = string
+  default     = "taskflow-cluster"
 }
 
 variable "subnet_ids" {
@@ -34,26 +10,26 @@ variable "subnet_ids" {
 }
 
 variable "security_group_id" {
-  description = "Security group ID"
+  description = "Security group ID for ECS tasks"
   type        = string
 }
 
-variable "execution_role_arn" {
-  description = "ECS task execution role ARN"
+variable "backend_task_definition_arn" {
+  description = "Backend task definition ARN"
   type        = string
 }
 
-variable "task_role_arn" {
-  description = "ECS task role ARN"
+variable "frontend_task_definition_arn" {
+  description = "Frontend task definition ARN"
   type        = string
 }
 
-variable "monitoring_host" {
-  description = "Monitoring server private IP"
+variable "backend_target_group_arn" {
+  description = "Backend ALB target group ARN"
   type        = string
 }
 
-variable "aws_region" {
-  description = "AWS region"
+variable "frontend_target_group_arn" {
+  description = "Frontend ALB target group ARN"
   type        = string
 }
