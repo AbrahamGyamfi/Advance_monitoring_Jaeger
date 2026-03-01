@@ -80,3 +80,9 @@ variable "aws_account_id" {
   type        = string
   default     = "697863031884"
 }
+
+variable "enable_ecs" {
+  description = "Enable ECS Fargate deployment"
+  type        = bool
+  default     = true
+}
