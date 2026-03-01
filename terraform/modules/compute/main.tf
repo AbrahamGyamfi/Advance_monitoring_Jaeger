@@ -15,11 +15,16 @@ data "aws_ami" "amazon_linux_2" {
 
 resource "aws_instance" "jenkins" {
   ami                  = data.aws_ami.amazon_linux_2.id
-  instance_type        = var.jenkins_instance_type
+  instance_type        = "t3.medium"
   key_name             = var.key_name
   security_groups      = [var.security_group_name]
   iam_instance_profile = var.jenkins_iam_instance_profile
   user_data            = file("${path.root}/../userdata/jenkins-userdata.sh")
+
+  root_block_device {
+    volume_size = 20
+    volume_type = "gp2"
+  }
 
   tags = {
     Name        = "TaskFlow-Jenkins-Server"

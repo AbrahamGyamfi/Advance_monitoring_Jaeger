@@ -8,13 +8,14 @@ echo "Directory: $DIR"
 
 cd "$DIR"
 
-# Run OWASP Dependency-Check
+# Run OWASP Dependency-Check without NVD update (use cached data)
 docker run --rm -v $(pwd):/src -v ~/.m2:/root/.m2 owasp/dependency-check:latest \
     --scan /src \
     --format JSON \
     --format HTML \
     --out /src \
     --project "$DIR" \
+    --noupdate \
     --failOnCVSS 7
 
 # Move reports
