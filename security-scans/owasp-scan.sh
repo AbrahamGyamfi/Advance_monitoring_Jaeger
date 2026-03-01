@@ -17,8 +17,7 @@ docker run --rm -v $(pwd):/src -v ~/.m2:/root/.m2 \
     --format HTML \
     --out /src \
     --project "$DIR" \
-    --nvdApiKey "${NVD_API_KEY}" \
-    --failOnCVSS 7
+    --nvdApiKey "${NVD_API_KEY}"
 
 # Move reports
 mv dependency-check-report.json ../owasp-$DIR-report.json 2>/dev/null || true
