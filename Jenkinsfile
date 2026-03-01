@@ -63,13 +63,11 @@ pipeline {
                 stage('SCA - Backend') {
                     steps {
                         script {
-                            echo 'Running Snyk SCA on backend...'
-                            withCredentials([string(credentialsId: 'snyk-token', variable: 'SNYK_TOKEN')]) {
-                                sh '''
-                                    chmod +x security-scans/snyk-scan.sh
-                                    ./security-scans/snyk-scan.sh backend backend
-                                '''
-                            }
+                            echo 'Running OWASP Dependency-Check SCA on backend...'
+                            sh '''
+                                chmod +x security-scans/owasp-scan.sh
+                                ./security-scans/owasp-scan.sh backend
+                            '''
                         }
                     }
                 }
@@ -440,7 +438,7 @@ pipeline {
         always {
             script {
                 echo 'Archiving security reports...'
-                archiveArtifacts artifacts: 'trivy-*-report.json,sbom-*.json,gitleaks-report.json,snyk-*-report.json', allowEmptyArchive: true
+                archiveArtifacts artifacts: 'trivy-*-report.json,sbom-*.json,gitleaks-report.json,owasp-*-report.json,owasp-*-report.html', allowEmptyArchive: true
                 
                 echo 'Cleaning up...'
                 sh """

@@ -70,3 +70,11 @@ module "codedeploy" {
   user_data             = file("${path.module}/../userdata/app-userdata.sh")
   aws_account_id        = var.aws_account_id
 }
+
+module "ecs" {
+  count  = var.enable_ecs ? 1 : 0
+  source = "./modules/ecs"
+
+  subnet_ids        = var.subnet_ids
+  security_group_id = module.networking.security_group_id
+}
