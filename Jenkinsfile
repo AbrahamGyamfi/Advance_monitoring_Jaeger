@@ -377,29 +377,28 @@ pipeline {
         stage('Deploy via CodeDeploy') {
             steps {
                 script {
-                    echo 'Creating deployment package...'
+                    echo 'Deploying to ECS Fargate...'
                     withCredentials([
                         [$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"],
                         string(credentialsId: 'aws-region', variable: 'AWS_REGION'),
                         string(credentialsId: 'aws-account-id', variable: 'AWS_ACCOUNT_ID')
                     ]) {
                         sh """
-                            zip -r deployment-${BUILD_NUMBER}.zip docker-compose.yml appspec.yml hooks/
+                            # Update ECS backend service
+                            aws ecs update-service \
+                                --cluster taskflow-cluster \
+                                --service taskflow-backend \
+                                --force-new-deployment \
+                                --region \${AWS_REGION}
                             
-                            aws s3 cp deployment-${BUILD_NUMBER}.zip s3://taskflow-codedeploy-\${AWS_ACCOUNT_ID}/
+                            # Update ECS frontend service
+                            aws ecs update-service \
+                                --cluster taskflow-cluster \
+                                --service taskflow-frontend \
+                                --force-new-deployment \
+                                --region \${AWS_REGION}
                             
-                            aws deploy create-deployment \
-                                --application-name taskflow-app \
-                                --deployment-group-name taskflow-blue-green \
-                                --s3-location bucket=taskflow-codedeploy-\${AWS_ACCOUNT_ID},key=deployment-${BUILD_NUMBER}.zip,bundleType=zip \
-                                --region \${AWS_REGION} \
-                                --output json > deployment-output.json
-                            
-                            DEPLOYMENT_ID=\$(cat deployment-output.json | grep -o '"deploymentId": "[^"]*' | cut -d'"' -f4)
-                            echo "Deployment ID: \${DEPLOYMENT_ID}"
-                            
-                            aws deploy wait deployment-successful --deployment-id \${DEPLOYMENT_ID} --region \${AWS_REGION}
-                            echo "Blue-Green deployment completed successfully!"
+                            echo "ECS services updated successfully!"
                         """
                     }
                 }
@@ -409,18 +408,18 @@ pipeline {
         stage('Health Check') {
             steps {
                 script {
-                    echo 'Running health checks via ALB...'
-                    def healthStatus = sh(
-                        script: '''
-                            sleep 10
-                            curl -f http://taskflow-alb-365219180.eu-west-1.elb.amazonaws.com/health
-                        ''',
-                        returnStatus: true
-                    )
-                    if (healthStatus == 0) {
-                        echo "Application is healthy via ALB!"
-                    } else {
-                        echo "Warning: Health check failed, but deployment completed"
+                    echo 'Waiting for ECS services to stabilize...'
+                    withCredentials([
+                        string(credentialsId: 'aws-region', variable: 'AWS_REGION')
+                    ]) {
+                        sh """
+                            aws ecs wait services-stable \
+                                --cluster taskflow-cluster \
+                                --services taskflow-backend taskflow-frontend \
+                                --region \${AWS_REGION}
+                            
+                            echo "✅ ECS services are stable and healthy!"
+                        """
                     }
                 }
             }
