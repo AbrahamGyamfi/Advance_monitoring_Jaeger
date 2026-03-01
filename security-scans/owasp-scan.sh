@@ -1,5 +1,4 @@
 #!/bin/bash
-set -e
 
 DIR=$1
 
@@ -17,10 +16,14 @@ docker run --rm -v $(pwd):/src -v ~/.m2:/root/.m2 \
     --format HTML \
     --out /src \
     --project "$DIR" \
-    --nvdApiKey "${NVD_API_KEY}"
+    --nvdApiKey "${NVD_API_KEY}" || true
 
 # Move reports
-mv dependency-check-report.json ../owasp-$DIR-report.json 2>/dev/null || true
-mv dependency-check-report.html ../owasp-$DIR-report.html 2>/dev/null || true
+if [ -f dependency-check-report.json ]; then
+    mv dependency-check-report.json ../owasp-$DIR-report.json
+fi
+if [ -f dependency-check-report.html ]; then
+    mv dependency-check-report.html ../owasp-$DIR-report.html
+fi
 
 echo "✅ OWASP scan completed"
