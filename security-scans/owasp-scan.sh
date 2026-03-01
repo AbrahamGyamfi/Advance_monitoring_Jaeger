@@ -8,14 +8,16 @@ echo "Directory: $DIR"
 
 cd "$DIR"
 
-# Run OWASP Dependency-Check without NVD update (use cached data)
-docker run --rm -v $(pwd):/src -v ~/.m2:/root/.m2 owasp/dependency-check:latest \
+# Run OWASP Dependency-Check with NVD API key
+docker run --rm -v $(pwd):/src -v ~/.m2:/root/.m2 \
+    -e NVD_API_KEY="${NVD_API_KEY}" \
+    owasp/dependency-check:latest \
     --scan /src \
     --format JSON \
     --format HTML \
     --out /src \
     --project "$DIR" \
-    --noupdate \
+    --nvdApiKey "${NVD_API_KEY}" \
     --failOnCVSS 7
 
 # Move reports

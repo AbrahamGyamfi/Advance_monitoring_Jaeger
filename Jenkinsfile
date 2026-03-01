@@ -55,10 +55,12 @@ pipeline {
                     steps {
                         script {
                             echo 'Running OWASP Dependency-Check SCA on backend...'
-                            sh '''
-                                chmod +x security-scans/owasp-scan.sh
-                                ./security-scans/owasp-scan.sh backend
-                            '''
+                            withCredentials([string(credentialsId: 'nvd-api-key', variable: 'NVD_API_KEY')]) {
+                                sh '''
+                                    chmod +x security-scans/owasp-scan.sh
+                                    ./security-scans/owasp-scan.sh backend
+                                '''
+                            }
                         }
                     }
                 }
