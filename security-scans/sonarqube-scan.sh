@@ -9,8 +9,8 @@ echo "Project: $PROJECT_KEY"
 echo "Source: $SOURCE_DIR"
 
 # Run SonarQube scanner
-docker run --rm \
-  -e SONAR_HOST_URL="${SONAR_HOST_URL:-http://sonarqube:9000}" \
+docker run --rm --network host \
+  -e SONAR_HOST_URL="${SONAR_HOST_URL}" \
   -e SONAR_LOGIN="${SONAR_TOKEN}" \
   -v "$(pwd)/$SOURCE_DIR:/usr/src" \
   sonarsource/sonar-scanner-cli \
@@ -20,7 +20,7 @@ docker run --rm \
 
 # Check quality gate status
 QUALITY_GATE=$(curl -s -u "${SONAR_TOKEN}:" \
-  "${SONAR_HOST_URL:-http://sonarqube:9000}/api/qualitygates/project_status?projectKey=$PROJECT_KEY" \
+  "${SONAR_HOST_URL}/api/qualitygates/project_status?projectKey=$PROJECT_KEY" \
   | jq -r '.projectStatus.status')
 
 echo "Quality Gate Status: $QUALITY_GATE"
