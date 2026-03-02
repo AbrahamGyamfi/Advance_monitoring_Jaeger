@@ -11,7 +11,7 @@ echo "Source: $SOURCE_DIR"
 # Run SonarQube scanner
 docker run --rm --network host \
   -e SONAR_HOST_URL="${SONAR_HOST_URL}" \
-  -e SONAR_LOGIN="${SONAR_TOKEN}" \
+  -e SONAR_TOKEN="${SONAR_TOKEN}" \
   -v "$(pwd)/$SOURCE_DIR:/usr/src" \
   sonarsource/sonar-scanner-cli \
   -Dsonar.projectKey="$PROJECT_KEY" \
