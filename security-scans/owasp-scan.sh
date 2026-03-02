@@ -7,8 +7,7 @@ echo "Directory: $DIR"
 
 cd "$DIR"
 
-# Run OWASP Dependency-Check with NVD API key
-docker run --rm -v $(pwd):/src -v ~/.m2:/root/.m2 \
+
     -e NVD_API_KEY="${NVD_API_KEY}" \
     owasp/dependency-check:latest \
     --scan /src \

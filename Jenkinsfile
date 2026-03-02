@@ -60,14 +60,43 @@ pipeline {
                         }
                     }
                 }
+                stage('SAST - Frontend') {
+                    steps {
+                        script {
+                            echo 'Running SonarCloud SAST on frontend...'
+                            withCredentials([
+                                string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN'),
+                                string(credentialsId: 'sonar-organization', variable: 'SONAR_ORGANIZATION')
+                            ]) {
+                                sh '''
+                                    chmod +x security-scans/sonarqube-scan.sh
+                                    ./security-scans/sonarqube-scan.sh taskflow-frontend frontend
+                                '''
+                            }
+                        }
+                    }
+                }
                 stage('SCA - Backend') {
                     steps {
                         script {
-                            echo 'Running OWASP Dependency-Check SCA on backend...'
-                            withCredentials([string(credentialsId: 'nvd-api-key', variable: 'NVD_API_KEY')]) {
+                            echo 'Running Snyk SCA on backend...'
+                            withCredentials([string(credentialsId: 'snyk-token', variable: 'SNYK_TOKEN')]) {
                                 sh '''
-                                    chmod +x security-scans/owasp-scan.sh
-                                    ./security-scans/owasp-scan.sh backend
+                                    chmod +x security-scans/snyk-scan.sh
+                                    ./security-scans/snyk-scan.sh backend
+                                '''
+                            }
+                        }
+                    }
+                }
+                stage('SCA - Frontend') {
+                    steps {
+                        script {
+                            echo 'Running Snyk SCA on frontend...'
+                            withCredentials([string(credentialsId: 'snyk-token', variable: 'SNYK_TOKEN')]) {
+                                sh '''
+                                    chmod +x security-scans/snyk-scan.sh
+                                    ./security-scans/snyk-scan.sh frontend
                                 '''
                             }
                         }

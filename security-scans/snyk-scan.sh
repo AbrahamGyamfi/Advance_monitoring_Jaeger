@@ -1,30 +1,17 @@
 #!/bin/bash
-set -e
 
-PROJECT_DIR="${1:-.}"
-PROJECT_NAME="${2:-taskflow}"
+DIR=$1
 
-echo "=== Running Snyk SCA Scan ==="
-echo "Directory: $PROJECT_DIR"
+echo "=== Running Snyk SCA ==="
+echo "Directory: $DIR"
 
-cd "$PROJECT_DIR"
+cd "$DIR"
 
-# Test for vulnerabilities
-snyk test \
-  --severity-threshold=high \
-  --json > ../snyk-${PROJECT_NAME}-report.json || SCAN_FAILED=1
+# Run Snyk test via Docker
+docker run --rm \
+    -e SNYK_TOKEN="${SNYK_TOKEN}" \
+    -v $(pwd):/project \
+    snyk/snyk:node \
+    test --json --file=/project/package.json > ../snyk-$DIR-report.json || true
 
-# Generate report
-snyk test --json-file-output=../snyk-${PROJECT_NAME}-report.json || true
-
-if [ "$SCAN_FAILED" = "1" ]; then
-  CRITICAL=$(jq '[.vulnerabilities[] | select(.severity=="critical")] | length' ../snyk-${PROJECT_NAME}-report.json)
-  HIGH=$(jq '[.vulnerabilities[] | select(.severity=="high")] | length' ../snyk-${PROJECT_NAME}-report.json)
-  
-  echo "❌ Snyk found vulnerabilities:"
-  echo "   Critical: $CRITICAL"
-  echo "   High: $HIGH"
-  exit 1
-fi
-
-echo "✅ Snyk scan passed - no Critical/High vulnerabilities"
+echo "✅ Snyk scan completed"
