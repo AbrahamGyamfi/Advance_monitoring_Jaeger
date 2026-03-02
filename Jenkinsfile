@@ -387,41 +387,46 @@ pipeline {
         stage('Deploy via CodeDeploy') {
             steps {
                 script {
-                    echo 'Registering new ECS task definitions and deploying...'
+                    echo 'Deploying to ECS via CodeDeploy Blue-Green...'
                     withCredentials([
                         [$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"],
                         string(credentialsId: 'aws-region', variable: 'AWS_REGION'),
                         string(credentialsId: 'aws-account-id', variable: 'AWS_ACCOUNT_ID'),
-                        string(credentialsId: 'app-name', variable: 'APP_NAME')
+                        string(credentialsId: 'app-name', variable: 'APP_NAME'),
+                        string(credentialsId: 'codedeploy-app-name', variable: 'CODEDEPLOY_APP'),
+                        string(credentialsId: 'codedeploy-deployment-group', variable: 'CODEDEPLOY_GROUP')
                     ]) {
                         sh """
-                            # Register new backend task definition with versioned image
-                            sed 's/IMAGE_TAG/${IMAGE_TAG}/g' ecs-task-definition.json > ecs-task-definition-backend-${IMAGE_TAG}.json
-                            aws ecs register-task-definition \
-                                --cli-input-json file://ecs-task-definition-backend-${IMAGE_TAG}.json \
+                            # Register new task definition
+                            sed 's/IMAGE_TAG/${IMAGE_TAG}/g' ecs-task-definition.json > ecs-task-definition-${IMAGE_TAG}.json
+                            TASK_ARN=\$(aws ecs register-task-definition \
+                                --cli-input-json file://ecs-task-definition-${IMAGE_TAG}.json \
+                                --region \${AWS_REGION} \
+                                --query 'taskDefinition.taskDefinitionArn' \
+                                --output text)
+                            echo "Task definition: \$TASK_ARN"
+                            
+                            # Create appspec
+                            cat > appspec.yaml <<EOF
+version: 0.0
+Resources:
+  - TargetService:
+      Type: AWS::ECS::Service
+      Properties:
+        TaskDefinition: "\$TASK_ARN"
+        LoadBalancerInfo:
+          ContainerName: "taskflow-backend"
+          ContainerPort: 5000
+EOF
+                            
+                            # Deploy via CodeDeploy
+                            aws deploy create-deployment \
+                                --application-name \${CODEDEPLOY_APP} \
+                                --deployment-group-name \${CODEDEPLOY_GROUP} \
+                                --revision revisionType=AppSpecContent,appSpecContent={content="\$(cat appspec.yaml)"} \
                                 --region \${AWS_REGION}
                             
-                            # Register new frontend task definition with versioned image
-                            sed 's/IMAGE_TAG/${IMAGE_TAG}/g' ecs-task-definition-frontend.json > ecs-task-definition-frontend-${IMAGE_TAG}.json
-                            aws ecs register-task-definition \
-                                --cli-input-json file://ecs-task-definition-frontend-${IMAGE_TAG}.json \
-                                --region \${AWS_REGION}
-                            
-                            # Update ECS backend service (CodeDeploy will handle blue-green)
-                            aws ecs update-service \
-                                --cluster taskflow-cluster \
-                                --service taskflow-backend \
-                                --force-new-deployment \
-                                --region \${AWS_REGION}
-                            
-                            # Update ECS frontend service (CodeDeploy will handle blue-green)
-                            aws ecs update-service \
-                                --cluster taskflow-cluster \
-                                --service taskflow-frontend \
-                                --force-new-deployment \
-                                --region \${AWS_REGION}
-                            
-                            echo "✅ Task definitions registered and ECS services updated via CodeDeploy!"
+                            echo "✅ CodeDeploy blue-green deployment initiated!"
                         """
                     }
                 }
@@ -433,14 +438,17 @@ pipeline {
                 script {
                     echo 'Verifying ECS deployment...'
                     withCredentials([
-                        string(credentialsId: 'aws-region', variable: 'AWS_REGION')
+                        string(credentialsId: 'aws-region', variable: 'AWS_REGION'),
+                        string(credentialsId: 'ecs-cluster-name', variable: 'ECS_CLUSTER'),
+                        string(credentialsId: 'ecs-service-backend', variable: 'ECS_SERVICE_BACKEND'),
+                        string(credentialsId: 'ecs-service-frontend', variable: 'ECS_SERVICE_FRONTEND')
                     ]) {
                         sh """
                             # Quick check - just verify services are running
                             echo "Checking ECS service status..."
                             aws ecs describe-services \
-                                --cluster taskflow-cluster \
-                                --services taskflow-backend taskflow-frontend \
+                                --cluster \${ECS_CLUSTER} \
+                                --services \${ECS_SERVICE_BACKEND} \${ECS_SERVICE_FRONTEND} \
                                 --region \${AWS_REGION} \
                                 --query 'services[*].[serviceName,status,runningCount,desiredCount]' \
                                 --output table

@@ -1,5 +1,5 @@
 jenkins:
-  systemMessage: "TaskFlow CI/CD - Fully Automated Configuration"
+  systemMessage: "TaskFlow CI/CD - ECS Fargate + CodeDeploy"
   numExecutors: 2
   mode: NORMAL
   
@@ -25,6 +25,7 @@ credentials:
   system:
     domainCredentials:
       - credentials:
+          # AWS Configuration
           - string:
               scope: GLOBAL
               id: "aws-region"
@@ -35,120 +36,102 @@ credentials:
               id: "aws-account-id"
               secret: "${AWS_ACCOUNT_ID}"
               description: "AWS Account ID"
-          - string:
-              scope: GLOBAL
-              id: "app-server-ip"
-              secret: "${APP_SERVER_IP}"
-              description: "App Server Public IP"
-          - string:
-              scope: GLOBAL
-              id: "app-private-ip"
-              secret: "${APP_PRIVATE_IP}"
-              description: "App Server Private IP"
-          - string:
-              scope: GLOBAL
-              id: "monitoring-host"
-              secret: "${MONITORING_HOST}"
-              description: "Monitoring Server IP"
-          - string:
-              scope: GLOBAL
-              id: "app-name"
-              secret: "taskflow"
-              description: "Application Name"
-          - string:
-              scope: GLOBAL
-              id: "node-version"
-              secret: "18"
-              description: "Node.js Version"
-          - string:
-              scope: GLOBAL
-              id: "app-port"
-              secret: "5000"
-              description: "Application Port"
-          - string:
-              scope: GLOBAL
-              id: "integration-test-port"
-              secret: "5001"
-              description: "Integration Test Port"
-          - string:
-              scope: GLOBAL
-              id: "health-check-timeout"
-              secret: "60"
-              description: "Health Check Timeout (seconds)"
-          - string:
-              scope: GLOBAL
-              id: "health-check-interval"
-              secret: "5"
-              description: "Health Check Interval (seconds)"
-          - string:
-              scope: GLOBAL
-              id: "ec2-user"
-              secret: "ec2-user"
-              description: "EC2 SSH Username"
-          - string:
-              scope: GLOBAL
-              id: "app-name"
-              secret: "taskflow"
-              description: "Application Name"
-          - string:
-              scope: GLOBAL
-              id: "node-version"
-              secret: "18"
-              description: "Node.js Version"
-          - string:
-              scope: GLOBAL
-              id: "app-port"
-              secret: "5000"
-              description: "Application Port"
-          - string:
-              scope: GLOBAL
-              id: "integration-test-port"
-              secret: "5001"
-              description: "Integration Test Port"
-          - string:
-              scope: GLOBAL
-              id: "health-check-timeout"
-              secret: "60"
-              description: "Health Check Timeout (seconds)"
-          - string:
-              scope: GLOBAL
-              id: "health-check-interval"
-              secret: "5"
-              description: "Health Check Interval (seconds)"
-          - string:
-              scope: GLOBAL
-              id: "ec2-user"
-              secret: "ec2-user"
-              description: "EC2 SSH Username"
-          - string:
-              scope: GLOBAL
-              id: "sonar-token"
-              secret: "${SONAR_TOKEN}"
-              description: "SonarQube Authentication Token"
-          - string:
-              scope: GLOBAL
-              id: "sonar-host-url"
-              secret: "http://localhost:9000"
-              description: "SonarQube Host URL"
-          - string:
-              scope: GLOBAL
-              id: "snyk-token"
-              secret: "${SNYK_TOKEN}"
-              description: "Snyk API Token"
           - aws:
               scope: GLOBAL
               id: "aws-credentials"
               accessKey: "${AWS_ACCESS_KEY_ID}"
               secretKey: "${AWS_SECRET_ACCESS_KEY}"
-              description: "AWS Credentials for ECR"
-          - basicSSHUserPrivateKey:
+              description: "AWS Credentials for ECR, ECS, CodeDeploy"
+          
+          # ECS/Fargate Configuration
+          - string:
               scope: GLOBAL
-              id: "app-server-ssh"
-              username: "ec2-user"
-              description: "SSH Key for App Server"
-              privateKeySource:
-                directEntry:
-                  privateKey: "${SSH_PRIVATE_KEY}"
+              id: "ecs-cluster-name"
+              secret: "taskflow-cluster"
+              description: "ECS Cluster Name"
+          - string:
+              scope: GLOBAL
+              id: "ecs-service-backend"
+              secret: "taskflow-backend"
+              description: "ECS Backend Service Name"
+          - string:
+              scope: GLOBAL
+              id: "ecs-service-frontend"
+              secret: "taskflow-frontend"
+              description: "ECS Frontend Service Name"
+          
+          # CodeDeploy Configuration
+          - string:
+              scope: GLOBAL
+              id: "codedeploy-app-name"
+              secret: "taskflow-app"
+              description: "CodeDeploy Application Name"
+          - string:
+              scope: GLOBAL
+              id: "codedeploy-deployment-group"
+              secret: "taskflow-blue-green"
+              description: "CodeDeploy Deployment Group"
+          
+          # Monitoring Configuration
+          - string:
+              scope: GLOBAL
+              id: "monitoring-host"
+              secret: "${MONITORING_HOST}"
+              description: "Monitoring Server IP"
+
+          # Application Configuration
+          - string:
+              scope: GLOBAL
+              id: "app-name"
+              secret: "taskflow"
+              description: "Application Name"
+          - string:
+              scope: GLOBAL
+              id: "node-version"
+              secret: "18"
+              description: "Node.js Version"
+          - string:
+              scope: GLOBAL
+              id: "app-port"
+              secret: "5000"
+              description: "Application Port"
+          - string:
+              scope: GLOBAL
+              id: "integration-test-port"
+              secret: "5001"
+              description: "Integration Test Port"
+          - string:
+              scope: GLOBAL
+              id: "health-check-timeout"
+              secret: "60"
+              description: "Health Check Timeout (seconds)"
+          - string:
+              scope: GLOBAL
+              id: "health-check-interval"
+              secret: "5"
+              description: "Health Check Interval (seconds)"
+          
+          # Security Scanning Tokens
+          - string:
+              scope: GLOBAL
+              id: "sonar-token"
+              secret: "${SONAR_TOKEN}"
+              description: "SonarCloud Authentication Token"
+          - string:
+              scope: GLOBAL
+              id: "sonar-organization"
+              secret: "${SONAR_ORGANIZATION}"
+              description: "SonarCloud Organization"
+          - string:
+              scope: GLOBAL
+              id: "sonar-host-url"
+              secret: "https://sonarcloud.io"
+              description: "SonarCloud Host URL"
+          - string:
+              scope: GLOBAL
+              id: "snyk-token"
+              secret: "${SNYK_TOKEN}"
+              description: "Snyk API Token"
 
 unclassified:
   location:
@@ -161,7 +144,7 @@ unclassified:
 jobs:
   - script: >
       pipelineJob('taskflow-pipeline') {
-        description('TaskFlow CI/CD Pipeline - Automated Build, Test, and Deploy')
+        description('TaskFlow CI/CD Pipeline - ECS Fargate Blue-Green Deployment')
         
         definition {
           cpsScm {

@@ -39,38 +39,20 @@ variable "admin_cidr_blocks" {
   type        = list(string)
 }
 
-variable "docker_registry" {
-  description = "Docker registry URL"
-  type        = string
-  default     = "697863031884.dkr.ecr.eu-west-1.amazonaws.com"
-}
-
-variable "image_tag" {
-  description = "Docker image tag"
-  type        = string
-  default     = "1.0.0"
-}
-
 variable "cloudtrail_bucket_name" {
   description = "S3 bucket name for CloudTrail logs"
   type        = string
   default     = "taskflow-cloudtrail-logs"
 }
 
-variable "enable_codedeploy" {
-  description = "Enable CodeDeploy Blue-Green deployment"
-  type        = bool
-  default     = true
-}
-
 variable "vpc_id" {
-  description = "VPC ID for ALB and ASG"
+  description = "VPC ID for ALB"
   type        = string
   default     = "vpc-0b491ab9d139fe84c"
 }
 
 variable "subnet_ids" {
-  description = "Subnet IDs for ALB and ASG"
+  description = "Subnet IDs for ALB and ECS"
   type        = list(string)
   default     = ["subnet-09fd8f27534eeae69", "subnet-07d4be176838dd1d5", "subnet-0bf18bf2083cf053c"]
 }
@@ -78,11 +60,5 @@ variable "subnet_ids" {
 variable "aws_account_id" {
   description = "AWS Account ID"
   type        = string
-  default     = "697863031884"
-}
-
-variable "enable_ecs" {
-  description = "Enable ECS Fargate deployment"
-  type        = bool
-  default     = true
+  default     = "010679547158"
 }

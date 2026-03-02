@@ -57,24 +57,22 @@ module "monitoring" {
   private_key_path     = var.private_key_path
 }
 
-module "codedeploy" {
-  count  = var.enable_codedeploy ? 1 : 0
-  source = "./modules/codedeploy"
-
-  vpc_id                = var.vpc_id
-  subnet_ids            = var.subnet_ids
-  security_group_id     = module.networking.security_group_id
-  ami_id                = module.compute.ami_id
-  key_name              = module.networking.key_name
-  instance_profile_name = module.security.iam_instance_profile
-  user_data             = file("${path.module}/../userdata/app-userdata.sh")
-  aws_account_id        = var.aws_account_id
-}
-
 module "ecs" {
-  count  = var.enable_ecs ? 1 : 0
   source = "./modules/ecs"
 
+  vpc_id            = var.vpc_id
   subnet_ids        = var.subnet_ids
   security_group_id = module.networking.security_group_id
+  target_group_arn  = module.codedeploy.blue_target_group_arn
+}
+
+module "codedeploy" {
+  source = "./modules/codedeploy"
+
+  vpc_id             = var.vpc_id
+  subnet_ids         = var.subnet_ids
+  security_group_id  = module.networking.security_group_id
+  aws_account_id     = var.aws_account_id
+  ecs_cluster_name   = module.ecs.cluster_name
+  ecs_service_name   = module.ecs.frontend_service_name
 }
