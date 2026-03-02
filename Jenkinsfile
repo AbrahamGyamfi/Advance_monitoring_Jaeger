@@ -47,7 +47,32 @@ pipeline {
                 stage('SAST - Backend') {
                     steps {
                         script {
-                            echo 'Skipping SonarQube SAST (network connectivity issue)...'
+                            echo 'Running SonarCloud SAST on backend...'
+                            withCredentials([
+                                string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN'),
+                                string(credentialsId: 'sonar-organization', variable: 'SONAR_ORGANIZATION')
+                            ]) {
+                                sh '''
+                                    chmod +x security-scans/sonarqube-scan.sh
+                                    ./security-scans/sonarqube-scan.sh taskflow-backend backend
+                                '''
+                            }
+                        }
+                    }
+                }
+                stage('SAST - Frontend') {
+                    steps {
+                        script {
+                            echo 'Running SonarCloud SAST on frontend...'
+                            withCredentials([
+                                string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN'),
+                                string(credentialsId: 'sonar-organization', variable: 'SONAR_ORGANIZATION')
+                            ]) {
+                                sh '''
+                                    chmod +x security-scans/sonarqube-scan.sh
+                                    ./security-scans/sonarqube-scan.sh taskflow-frontend frontend
+                                '''
+                            }
                         }
                     }
                 }
@@ -58,6 +83,17 @@ pipeline {
                             sh '''
                                 chmod +x security-scans/owasp-scan.sh
                                 ./security-scans/owasp-scan.sh backend
+                            '''
+                        }
+                    }
+                }
+                stage('SCA - Frontend') {
+                    steps {
+                        script {
+                            echo 'Running OWASP Dependency-Check SCA on frontend...'
+                            sh '''
+                                chmod +x security-scans/owasp-scan.sh
+                                ./security-scans/owasp-scan.sh frontend
                             '''
                         }
                     }
