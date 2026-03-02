@@ -1,5 +1,4 @@
 #!/bin/bash
-set -e
 
 REPORT_FILE=${1:-gitleaks-report.json}
 
@@ -10,12 +9,15 @@ if ! command -v gitleaks &> /dev/null; then
     echo "Installing Gitleaks..."
     wget -qO gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.18.0/gitleaks_8.18.0_linux_x64.tar.gz
     tar -xzf gitleaks.tar.gz gitleaks
-    sudo mv gitleaks /usr/local/bin/
+    chmod +x gitleaks
     rm gitleaks.tar.gz
+    GITLEAKS_BIN=./gitleaks
+else
+    GITLEAKS_BIN=gitleaks
 fi
 
 # Scan repository
-gitleaks detect --report-format json --report-path $REPORT_FILE --no-git || true
+$GITLEAKS_BIN detect --report-format json --report-path $REPORT_FILE --no-git || true
 
 # Check for secrets
 if [ -f "$REPORT_FILE" ]; then
