@@ -44,7 +44,7 @@ pipeline {
                         }
                     }
                 }
-                stage('SAST - Full Project') {
+                stage('SAST Scan') {
                     steps {
                         script {
                             echo 'Running SonarCloud SAST on entire project...'
@@ -60,26 +60,14 @@ pipeline {
                         }
                     }
                 }
-                stage('SCA - Backend') {
+                stage('SCA Scan') {
                     steps {
                         script {
-                            echo 'Running Snyk SCA on backend...'
+                            echo 'Running Snyk SCA on backend and frontend...'
                             withCredentials([string(credentialsId: 'snyk-token', variable: 'SNYK_TOKEN')]) {
                                 sh '''
                                     chmod +x security-scans/snyk-scan.sh
                                     ./security-scans/snyk-scan.sh backend
-                                '''
-                            }
-                        }
-                    }
-                }
-                stage('SCA - Frontend') {
-                    steps {
-                        script {
-                            echo 'Running Snyk SCA on frontend...'
-                            withCredentials([string(credentialsId: 'snyk-token', variable: 'SNYK_TOKEN')]) {
-                                sh '''
-                                    chmod +x security-scans/snyk-scan.sh
                                     ./security-scans/snyk-scan.sh frontend
                                 '''
                             }
