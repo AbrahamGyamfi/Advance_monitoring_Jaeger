@@ -44,33 +44,17 @@ pipeline {
                         }
                     }
                 }
-                stage('SAST - Backend') {
+                stage('SAST - Full Project') {
                     steps {
                         script {
-                            echo 'Running SonarCloud SAST on backend...'
+                            echo 'Running SonarCloud SAST on entire project...'
                             withCredentials([
                                 string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN'),
                                 string(credentialsId: 'sonar-organization', variable: 'SONAR_ORGANIZATION')
                             ]) {
                                 sh '''
                                     chmod +x security-scans/sonarqube-scan.sh
-                                    ./security-scans/sonarqube-scan.sh taskflow-backend backend
-                                '''
-                            }
-                        }
-                    }
-                }
-                stage('SAST - Frontend') {
-                    steps {
-                        script {
-                            echo 'Running SonarCloud SAST on frontend...'
-                            withCredentials([
-                                string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN'),
-                                string(credentialsId: 'sonar-organization', variable: 'SONAR_ORGANIZATION')
-                            ]) {
-                                sh '''
-                                    chmod +x security-scans/sonarqube-scan.sh
-                                    ./security-scans/sonarqube-scan.sh taskflow-frontend frontend
+                                    ./security-scans/sonarqube-scan.sh AbrahamGyamfi_Advance_monitoring_Jaeger .
                                 '''
                             }
                         }
