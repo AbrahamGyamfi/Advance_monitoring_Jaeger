@@ -79,22 +79,26 @@ pipeline {
                 stage('SCA - Backend') {
                     steps {
                         script {
-                            echo 'Running OWASP Dependency-Check SCA on backend...'
-                            sh '''
-                                chmod +x security-scans/owasp-scan.sh
-                                ./security-scans/owasp-scan.sh backend
-                            '''
+                            echo 'Running Snyk SCA on backend...'
+                            withCredentials([string(credentialsId: 'snyk-token', variable: 'SNYK_TOKEN')]) {
+                                sh '''
+                                    chmod +x security-scans/snyk-scan.sh
+                                    ./security-scans/snyk-scan.sh backend
+                                '''
+                            }
                         }
                     }
                 }
                 stage('SCA - Frontend') {
                     steps {
                         script {
-                            echo 'Running OWASP Dependency-Check SCA on frontend...'
-                            sh '''
-                                chmod +x security-scans/owasp-scan.sh
-                                ./security-scans/owasp-scan.sh frontend
-                            '''
+                            echo 'Running Snyk SCA on frontend...'
+                            withCredentials([string(credentialsId: 'snyk-token', variable: 'SNYK_TOKEN')]) {
+                                sh '''
+                                    chmod +x security-scans/snyk-scan.sh
+                                    ./security-scans/snyk-scan.sh frontend
+                                '''
+                            }
                         }
                     }
                 }
