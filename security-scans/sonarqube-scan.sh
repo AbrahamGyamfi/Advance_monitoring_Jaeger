@@ -13,7 +13,7 @@ docker run --rm --network host \
   -e SONAR_HOST_URL="${SONAR_HOST_URL}" \
   -e SONAR_TOKEN="${SONAR_TOKEN}" \
   -v "$(pwd)/$SOURCE_DIR:/usr/src" \
-  sonarsource/sonar-scanner-cli \
+  sonarsource/sonar-scanner-cli:5.0 \
   -Dsonar.projectKey="$PROJECT_KEY" \
   -Dsonar.sources=. \
   -Dsonar.exclusions="**/node_modules/**,**/test/**,**/tests/**"
