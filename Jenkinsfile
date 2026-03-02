@@ -47,8 +47,16 @@ pipeline {
                 stage('SAST - Backend') {
                     steps {
                         script {
-                            echo 'Skipping SonarQube SAST (too slow - 25+ mins)'
-                            echo 'Other security scans (Gitleaks, OWASP, Trivy) are active'
+                            echo 'Running SonarCloud SAST on backend...'
+                            withCredentials([
+                                string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN'),
+                                string(credentialsId: 'sonar-organization', variable: 'SONAR_ORGANIZATION')
+                            ]) {
+                                sh '''
+                                    chmod +x security-scans/sonarqube-scan.sh
+                                    ./security-scans/sonarqube-scan.sh taskflow-backend backend
+                                '''
+                            }
                         }
                     }
                 }
