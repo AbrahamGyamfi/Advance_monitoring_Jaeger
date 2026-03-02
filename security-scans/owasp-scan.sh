@@ -20,10 +20,11 @@ docker run --rm \
     --format HTML \
     --out /src \
     --project "$DIR" \
-    --noupdate || true
+    --failOnCVSS 7 \
+    --noupdate
 
 # Move reports
 mv dependency-check-report.json ../owasp-$DIR-report.json 2>/dev/null || true
 mv dependency-check-report.html ../owasp-$DIR-report.html 2>/dev/null || true
 
-echo "✅ OWASP scan completed"
+echo "OWASP scan completed - Pipeline will FAIL if Critical/High vulnerabilities found"

@@ -387,28 +387,41 @@ pipeline {
         stage('Deploy via CodeDeploy') {
             steps {
                 script {
-                    echo 'Deploying to ECS Fargate...'
+                    echo 'Registering new ECS task definitions and deploying...'
                     withCredentials([
                         [$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"],
                         string(credentialsId: 'aws-region', variable: 'AWS_REGION'),
-                        string(credentialsId: 'aws-account-id', variable: 'AWS_ACCOUNT_ID')
+                        string(credentialsId: 'aws-account-id', variable: 'AWS_ACCOUNT_ID'),
+                        string(credentialsId: 'app-name', variable: 'APP_NAME')
                     ]) {
                         sh """
-                            # Update ECS backend service
+                            # Register new backend task definition with versioned image
+                            sed 's/IMAGE_TAG/${IMAGE_TAG}/g' ecs-task-definition.json > ecs-task-definition-backend-${IMAGE_TAG}.json
+                            aws ecs register-task-definition \
+                                --cli-input-json file://ecs-task-definition-backend-${IMAGE_TAG}.json \
+                                --region \${AWS_REGION}
+                            
+                            # Register new frontend task definition with versioned image
+                            sed 's/IMAGE_TAG/${IMAGE_TAG}/g' ecs-task-definition-frontend.json > ecs-task-definition-frontend-${IMAGE_TAG}.json
+                            aws ecs register-task-definition \
+                                --cli-input-json file://ecs-task-definition-frontend-${IMAGE_TAG}.json \
+                                --region \${AWS_REGION}
+                            
+                            # Update ECS backend service (CodeDeploy will handle blue-green)
                             aws ecs update-service \
                                 --cluster taskflow-cluster \
                                 --service taskflow-backend \
                                 --force-new-deployment \
                                 --region \${AWS_REGION}
                             
-                            # Update ECS frontend service
+                            # Update ECS frontend service (CodeDeploy will handle blue-green)
                             aws ecs update-service \
                                 --cluster taskflow-cluster \
                                 --service taskflow-frontend \
                                 --force-new-deployment \
                                 --region \${AWS_REGION}
                             
-                            echo "ECS services updated successfully!"
+                            echo "✅ Task definitions registered and ECS services updated via CodeDeploy!"
                         """
                     }
                 }
@@ -439,8 +452,8 @@ pipeline {
     post {
         always {
             script {
-                echo 'Archiving security reports...'
-                archiveArtifacts artifacts: 'trivy-*-report.json,sbom-*.json,gitleaks-report.json,owasp-*-report.json,owasp-*-report.html', allowEmptyArchive: true
+                echo 'Archiving security reports and SBOM files...'
+                archiveArtifacts artifacts: 'trivy-*-report.json,sbom-*.json,gitleaks-report.json,snyk-*-report.json,ecs-task-definition-*-${BUILD_NUMBER}.json', allowEmptyArchive: true
                 
                 echo 'Cleaning up...'
                 sh """
