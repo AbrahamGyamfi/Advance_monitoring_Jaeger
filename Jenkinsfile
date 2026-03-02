@@ -44,6 +44,22 @@ pipeline {
                         }
                     }
                 }
+                stage('SAST - Backend') {
+                    steps {
+                        script {
+                            echo 'Running SonarCloud SAST on backend...'
+                            withCredentials([
+                                string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN'),
+                                string(credentialsId: 'sonar-organization', variable: 'SONAR_ORGANIZATION')
+                            ]) {
+                                sh '''
+                                    chmod +x security-scans/sonarqube-scan.sh
+                                    ./security-scans/sonarqube-scan.sh AbrahamGyamfi_Advance_monitoring_Jaeger backend
+                                '''
+                            }
+                        }
+                    }
+                }
                 stage('SCA - Backend') {
                     steps {
                         script {
