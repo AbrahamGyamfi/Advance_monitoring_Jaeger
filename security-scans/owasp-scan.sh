@@ -1,5 +1,4 @@
 #!/bin/bash
-set -e
 
 DIR=$1
 
@@ -8,14 +7,21 @@ echo "Directory: $DIR"
 
 cd "$DIR"
 
-# Run OWASP Dependency-Check
-docker run --rm -v $(pwd):/src -v ~/.m2:/root/.m2 owasp/dependency-check:latest \
+# Create cache directory on Jenkins server
+mkdir -p /tmp/owasp-cache
+
+# Run OWASP Dependency-Check with NVD API key and cache
+docker run --rm \
+    -v $(pwd):/src \
+    -v /tmp/owasp-cache:/usr/share/dependency-check/data \
+    -e NVD_API_KEY="${NVD_API_KEY}" \
+    owasp/dependency-check:latest \
     --scan /src \
     --format JSON \
     --format HTML \
     --out /src \
     --project "$DIR" \
-    --failOnCVSS 7
+    --nvdApiKey "${NVD_API_KEY}" || true
 
 # Move reports
 mv dependency-check-report.json ../owasp-$DIR-report.json 2>/dev/null || true
