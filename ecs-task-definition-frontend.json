@@ -19,7 +19,7 @@
       "environment": [
         {
           "name": "REACT_APP_API_URL",
-          "value": "http://taskflow-backend:5000"
+          "value": "http://34.244.53.86:5000"
         }
       ],
       "logConfiguration": {
