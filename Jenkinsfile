@@ -101,11 +101,11 @@ Resources:
             Subnets: ["\$SUBNET0", "\$SUBNET1"]
 EOF
 
-        # Create deployment
+        # Create deployment using file-based revision
         DEPLOYMENT_ID=\$(aws deploy create-deployment \
             --application-name \${CODEDEPLOY_APP} \
             --deployment-group-name ${deploymentGroup} \
-            --revision revisionType=AppSpecContent,appSpecContent={content="\$(cat ${appspecFile} | tr '\\n' ' ')"} \
+            --revision '{"revisionType":"AppSpecContent","appSpecContent":{"content":"'\$(cat ${appspecFile} | sed 's/"/\\\"/g' | tr '\n' ' ' | sed 's/  */ /g')'"}}' \
             --region \${AWS_REGION} \
             --query 'deploymentId' --output text)
         echo "✅ ${component.capitalize()} deployment: \$DEPLOYMENT_ID"
