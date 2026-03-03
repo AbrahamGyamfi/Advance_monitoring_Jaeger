@@ -334,7 +334,7 @@ pipeline {
                         string(credentialsId: 'ecs-cluster-name', variable: 'ECS_CLUSTER')
                     ]) {
                         parallel(
-                            frontend: { deployToECS('frontend', '8080') },
+                            frontend: { deployToECS('frontend', '80') },
                             backend: { deployToECS('backend', '5000') }
                         )
                     }
