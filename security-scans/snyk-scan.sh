@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 DIR=$1
 
@@ -11,14 +12,16 @@ cd "$DIR"
 docker run --rm \
     -e SNYK_TOKEN="${SNYK_TOKEN}" \
     -v $(pwd):/project \
+    -w /project \
     snyk/snyk:node \
-    test --severity-threshold=high --file=/project/package.json
+    test --severity-threshold=high --file=package.json
 
 # Also generate JSON report
 docker run --rm \
     -e SNYK_TOKEN="${SNYK_TOKEN}" \
     -v $(pwd):/project \
+    -w /project \
     snyk/snyk:node \
-    test --json --file=/project/package.json > ../snyk-$DIR-report.json || true
+    test --json --file=package.json > ../snyk-$DIR-report.json || true
 
-echo "Snyk scan completed - Pipeline will FAIL if High/Critical vulnerabilities found"
+echo "✅ Snyk scan completed - Pipeline will FAIL if High/Critical vulnerabilities found"

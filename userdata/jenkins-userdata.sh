@@ -172,6 +172,10 @@ credentials:
               scope: GLOBAL
               id: "codedeploy-deployment-group"
               secret: "taskflow-blue-green"
+          - string:
+              scope: GLOBAL
+              id: "codedeploy-backend-deployment-group"
+              secret: "taskflow-backend-blue-green"
           # Security Scan Tokens
           - string:
               scope: GLOBAL
