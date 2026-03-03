@@ -66,6 +66,21 @@ def deployToECS(String component, String containerPort) {
     def deploymentGroup = component == 'frontend' ? env.CODEDEPLOY_GROUP : env.CODEDEPLOY_BACKEND_GROUP
     
     sh """
+        # Stop any existing in-progress deployment for this deployment group
+        echo "Checking for existing deployments on ${deploymentGroup}..."
+        EXISTING_DEPLOYMENT=\$(aws deploy list-deployments \
+            --application-name \${CODEDEPLOY_APP} \
+            --deployment-group-name ${deploymentGroup} \
+            --include-only-statuses InProgress \
+            --region \${AWS_REGION} \
+            --query 'deployments[0]' --output text 2>/dev/null || echo "None")
+        
+        if [ "\$EXISTING_DEPLOYMENT" != "None" ] && [ -n "\$EXISTING_DEPLOYMENT" ]; then
+            echo "⚠️ Stopping existing deployment: \$EXISTING_DEPLOYMENT"
+            aws deploy stop-deployment --deployment-id \$EXISTING_DEPLOYMENT --region \${AWS_REGION} --auto-rollback-enabled || true
+            sleep 5
+        fi
+
         # Register task definition
         sed 's/IMAGE_TAG/${IMAGE_TAG}/g' ${taskDefFile} > ${taskDefFile.replace('.json', '')}-${IMAGE_TAG}.json
         TASK_ARN=\$(aws ecs register-task-definition \
