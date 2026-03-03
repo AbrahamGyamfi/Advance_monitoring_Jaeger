@@ -6,6 +6,10 @@ output "alb_listener_arn" {
   value = aws_lb_listener.taskflow.arn
 }
 
+output "alb_test_listener_arn" {
+  value = aws_lb_listener.taskflow_test.arn
+}
+
 output "blue_target_group_arn" {
   value = aws_lb_target_group.blue.arn
 }
@@ -24,6 +28,22 @@ output "codedeploy_app_name" {
 
 output "deployment_group_name" {
   value = aws_codedeploy_deployment_group.taskflow.deployment_group_name
+}
+
+output "backend_blue_target_group_arn" {
+  value = aws_lb_target_group.backend_blue.arn
+}
+
+output "backend_blue_target_group_name" {
+  value = aws_lb_target_group.backend_blue.name
+}
+
+output "backend_green_target_group_name" {
+  value = aws_lb_target_group.backend_green.name
+}
+
+output "backend_deployment_group_name" {
+  value = aws_codedeploy_deployment_group.backend.deployment_group_name
 }
 
 output "s3_bucket_name" {

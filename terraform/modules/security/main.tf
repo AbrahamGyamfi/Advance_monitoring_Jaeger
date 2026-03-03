@@ -87,16 +87,15 @@ resource "aws_cloudtrail" "main" {
   }
 }
 
+# GuardDuty detector - imported from existing
 resource "aws_guardduty_detector" "main" {
   enable = true
-
-
 
   tags = {
     Name    = "TaskFlow-GuardDuty"
     Project = "TaskFlow"
   }
-}
+}# }
 
 resource "aws_iam_role" "cloudwatch_logs" {
   name = var.cloudwatch_role_name

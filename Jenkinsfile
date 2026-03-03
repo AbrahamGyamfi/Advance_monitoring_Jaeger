@@ -1,3 +1,130 @@
+#!/usr/bin/env groovy
+
+// ============================================================================
+// SHARED LIBRARY FUNCTIONS
+// ============================================================================
+
+def ecrLogin() {
+    sh """
+        aws ecr get-login-password --region \${AWS_REGION} | \
+        docker login --username AWS --password-stdin \
+        \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com
+    """
+}
+
+def buildDockerImage(String component, String imageTag) {
+    dir(component) {
+        sh """
+            docker pull \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-${component}:latest || true
+            DOCKER_BUILDKIT=0 docker build \
+                --cache-from \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-${component}:latest \
+                --build-arg BUILD_DATE=\$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
+                --build-arg VCS_REF=\${GIT_COMMIT} \
+                --build-arg BUILD_NUMBER=\${BUILD_NUMBER} \
+                -t \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-${component}:${imageTag} .
+        """
+    }
+}
+
+def pushDockerImage(String component, String imageTag) {
+    sh """
+        docker push \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-${component}:${imageTag}
+        docker tag \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-${component}:${imageTag} \
+                   \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-${component}:latest
+        docker push \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-${component}:latest
+    """
+}
+
+def runSecurityScan(String scanType, String target = '') {
+    def scanScripts = [
+        'gitleaks': './security-scans/gitleaks-scan.sh',
+        'sonar': './security-scans/sonarqube-scan.sh AbrahamGyamfi_Advance_monitoring_Jaeger .',
+        'snyk': "./security-scans/snyk-scan.sh ${target}",
+        'trivy': "./security-scans/trivy-scan.sh \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-${target}:${IMAGE_TAG} ${target}",
+        'sbom': "./security-scans/sbom-generate.sh \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-${target}:${IMAGE_TAG} ${target}"
+    ]
+    
+    sh "chmod +x security-scans/*.sh"
+    sh scanScripts[scanType]
+}
+
+def runTests(String component, String testType) {
+    dir(component) {
+        def npmInstall = component == 'frontend' ? 'npm ci --legacy-peer-deps' : 'npm ci'
+        def testCmd = testType == 'unit' ? 'CI=true npm test -- --passWithNoTests' : 'npm run lint'
+        
+        sh """
+            docker run --rm -v \$(pwd):/app -w /app node:\${NODE_VERSION}-alpine \
+                sh -c '${npmInstall} && ${testCmd}'
+        """
+    }
+}
+
+def deployToECS(String component, String containerPort) {
+    def taskDefFile = "ecs-task-definition-${component}.json"
+    def appspecFile = "appspec-${component}.yaml"
+    def deploymentGroup = component == 'frontend' ? env.CODEDEPLOY_GROUP : env.CODEDEPLOY_BACKEND_GROUP
+    
+    sh """
+        # Register task definition
+        sed 's/IMAGE_TAG/${IMAGE_TAG}/g' ${taskDefFile} > ${taskDefFile.replace('.json', '')}-${IMAGE_TAG}.json
+        TASK_ARN=\$(aws ecs register-task-definition \
+            --cli-input-json file://${taskDefFile.replace('.json', '')}-${IMAGE_TAG}.json \
+            --region \${AWS_REGION} \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+        echo "${component.capitalize()} task definition: \$TASK_ARN"
+
+        # Get network configuration
+        SG=\$(aws ecs describe-services --cluster \${ECS_CLUSTER} --services taskflow-${component} \
+            --region \${AWS_REGION} --query 'services[0].networkConfiguration.awsvpcConfiguration.securityGroups[0]' --output text)
+        SUBNET0=\$(aws ecs describe-services --cluster \${ECS_CLUSTER} --services taskflow-${component} \
+            --region \${AWS_REGION} --query 'services[0].networkConfiguration.awsvpcConfiguration.subnets[0]' --output text)
+        SUBNET1=\$(aws ecs describe-services --cluster \${ECS_CLUSTER} --services taskflow-${component} \
+            --region \${AWS_REGION} --query 'services[0].networkConfiguration.awsvpcConfiguration.subnets[1]' --output text)
+
+        # Generate AppSpec
+        cat > ${appspecFile} <<EOF
+version: 0.0
+Resources:
+  - TargetService:
+      Type: AWS::ECS::Service
+      Properties:
+        TaskDefinition: "\$TASK_ARN"
+        LoadBalancerInfo:
+          ContainerName: "taskflow-${component}"
+          ContainerPort: ${containerPort}
+        PlatformVersion: "LATEST"
+        NetworkConfiguration:
+          AwsvpcConfiguration:
+            AssignPublicIp: ENABLED
+            SecurityGroups: ["\$SG"]
+            Subnets: ["\$SUBNET0", "\$SUBNET1"]
+EOF
+
+        # Create deployment
+        DEPLOYMENT_ID=\$(aws deploy create-deployment \
+            --application-name \${CODEDEPLOY_APP} \
+            --deployment-group-name ${deploymentGroup} \
+            --revision revisionType=AppSpecContent,appSpecContent={content="\$(cat ${appspecFile} | tr '\\n' ' ')"} \
+            --region \${AWS_REGION} \
+            --query 'deploymentId' --output text)
+        echo "✅ ${component.capitalize()} deployment: \$DEPLOYMENT_ID"
+    """
+}
+
+def getAWSCredentials() {
+    return [
+        [$class: 'AmazonWebServicesCredentialsBinding', credentialsId: env.AWS_CREDENTIALS_ID],
+        string(credentialsId: 'aws-region', variable: 'AWS_REGION'),
+        string(credentialsId: 'aws-account-id', variable: 'AWS_ACCOUNT_ID'),
+        string(credentialsId: 'app-name', variable: 'APP_NAME')
+    ]
+}
+
+// ============================================================================
+// PIPELINE DEFINITION
+// ============================================================================
+
 pipeline {
     agent any
     
@@ -37,25 +164,19 @@ pipeline {
                     steps {
                         script {
                             echo 'Scanning for secrets with Gitleaks...'
-                            sh '''
-                                chmod +x security-scans/gitleaks-scan.sh
-                                ./security-scans/gitleaks-scan.sh
-                            '''
+                            runSecurityScan('gitleaks')
                         }
                     }
                 }
                 stage('SAST Scan') {
                     steps {
                         script {
-                            echo 'Running SonarCloud SAST on entire project...'
+                            echo 'Running SonarCloud SAST...'
                             withCredentials([
                                 string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN'),
                                 string(credentialsId: 'sonar-organization', variable: 'SONAR_ORGANIZATION')
                             ]) {
-                                sh '''
-                                    chmod +x security-scans/sonarqube-scan.sh
-                                    ./security-scans/sonarqube-scan.sh AbrahamGyamfi_Advance_monitoring_Jaeger .
-                                '''
+                                runSecurityScan('sonar')
                             }
                         }
                     }
@@ -63,13 +184,10 @@ pipeline {
                 stage('SCA Scan') {
                     steps {
                         script {
-                            echo 'Running Snyk SCA on backend and frontend...'
+                            echo 'Running Snyk SCA...'
                             withCredentials([string(credentialsId: 'snyk-token', variable: 'SNYK_TOKEN')]) {
-                                sh '''
-                                    chmod +x security-scans/snyk-scan.sh
-                                    ./security-scans/snyk-scan.sh backend
-                                    ./security-scans/snyk-scan.sh frontend
-                                '''
+                                runSecurityScan('snyk', 'backend')
+                                runSecurityScan('snyk', 'frontend')
                             }
                         }
                     }
@@ -78,226 +196,77 @@ pipeline {
         }
         
         stage('Build Docker Images') {
-            parallel {
-                stage('Build Backend') {
-                    steps {
-                        script {
-                            echo 'Building backend Docker image with layer caching...'
-                            withCredentials([
-                                [$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-credentials'],
-                                string(credentialsId: 'aws-region', variable: 'AWS_REGION'),
-                                string(credentialsId: 'aws-account-id', variable: 'AWS_ACCOUNT_ID'),
-                                string(credentialsId: 'app-name', variable: 'APP_NAME')
-                            ]) {
-                                dir('backend') {
-                                    sh """
-                                        aws ecr get-login-password --region \${AWS_REGION} | docker login --username AWS --password-stdin \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com
-                                        docker pull \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-backend:latest || true
-                                        DOCKER_BUILDKIT=0 docker build \
-                                            --cache-from \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-backend:latest \
-                                            --build-arg BUILD_DATE=\$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
-                                            --build-arg VCS_REF=\${GIT_COMMIT} \
-                                            --build-arg BUILD_NUMBER=\${BUILD_NUMBER} \
-                                            -t \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-backend:${BUILD_NUMBER} .
-                                    """
-                                }
-                            }
-                        }
-                    }
-                }
-                stage('Build Frontend') {
-                    steps {
-                        script {
-                            echo 'Building frontend Docker image with layer caching...'
-                            withCredentials([
-                                [$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-credentials'],
-                                string(credentialsId: 'aws-region', variable: 'AWS_REGION'),
-                                string(credentialsId: 'aws-account-id', variable: 'AWS_ACCOUNT_ID'),
-                                string(credentialsId: 'app-name', variable: 'APP_NAME')
-                            ]) {
-                                dir('frontend') {
-                                    sh """
-                                        aws ecr get-login-password --region \${AWS_REGION} | docker login --username AWS --password-stdin \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com
-                                        docker pull \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-frontend:latest || true
-                                        DOCKER_BUILDKIT=0 docker build \
-                                            --cache-from \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-frontend:latest \
-                                            --build-arg BUILD_DATE=\$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
-                                            --build-arg VCS_REF=\${GIT_COMMIT} \
-                                            --build-arg BUILD_NUMBER=\${BUILD_NUMBER} \
-                                            -t \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-frontend:${BUILD_NUMBER} .
-                                    """
-                                }
-                            }
-                        }
+            steps {
+                script {
+                    echo 'Building Docker images with layer caching...'
+                    withCredentials(getAWSCredentials()) {
+                        ecrLogin()
+                        parallel(
+                            backend: { buildDockerImage('backend', IMAGE_TAG) },
+                            frontend: { buildDockerImage('frontend', IMAGE_TAG) }
+                        )
                     }
                 }
             }
         }
         
         stage('Container Security Scan') {
-            parallel {
-                stage('Scan Backend') {
-                    steps {
-                        script {
-                            echo 'Scanning backend image with Trivy...'
-                            withCredentials([
-                                string(credentialsId: 'aws-region', variable: 'AWS_REGION'),
-                                string(credentialsId: 'aws-account-id', variable: 'AWS_ACCOUNT_ID'),
-                                string(credentialsId: 'app-name', variable: 'APP_NAME')
-                            ]) {
-                                sh """
-                                    chmod +x security-scans/trivy-scan.sh
-                                    ./security-scans/trivy-scan.sh \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-backend:${BUILD_NUMBER} backend
-                                """
-                            }
-                        }
-                    }
-                }
-                stage('Scan Frontend') {
-                    steps {
-                        script {
-                            echo 'Scanning frontend image with Trivy...'
-                            withCredentials([
-                                string(credentialsId: 'aws-region', variable: 'AWS_REGION'),
-                                string(credentialsId: 'aws-account-id', variable: 'AWS_ACCOUNT_ID'),
-                                string(credentialsId: 'app-name', variable: 'APP_NAME')
-                            ]) {
-                                sh """
-                                    chmod +x security-scans/trivy-scan.sh
-                                    ./security-scans/trivy-scan.sh \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-frontend:${BUILD_NUMBER} frontend
-                                """
-                            }
-                        }
+            steps {
+                script {
+                    echo 'Scanning images with Trivy...'
+                    withCredentials(getAWSCredentials()) {
+                        parallel(
+                            backend: { runSecurityScan('trivy', 'backend') },
+                            frontend: { runSecurityScan('trivy', 'frontend') }
+                        )
                     }
                 }
             }
         }
         
         stage('Generate SBOM') {
-            parallel {
-                stage('Backend SBOM') {
-                    steps {
-                        script {
-                            echo 'Generating backend SBOM...'
-                            withCredentials([
-                                string(credentialsId: 'aws-region', variable: 'AWS_REGION'),
-                                string(credentialsId: 'aws-account-id', variable: 'AWS_ACCOUNT_ID'),
-                                string(credentialsId: 'app-name', variable: 'APP_NAME')
-                            ]) {
-                                sh """
-                                    chmod +x security-scans/sbom-generate.sh
-                                    ./security-scans/sbom-generate.sh \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-backend:${BUILD_NUMBER} backend
-                                """
-                            }
-                        }
-                    }
-                }
-                stage('Frontend SBOM') {
-                    steps {
-                        script {
-                            echo 'Generating frontend SBOM...'
-                            withCredentials([
-                                string(credentialsId: 'aws-region', variable: 'AWS_REGION'),
-                                string(credentialsId: 'aws-account-id', variable: 'AWS_ACCOUNT_ID'),
-                                string(credentialsId: 'app-name', variable: 'APP_NAME')
-                            ]) {
-                                sh """
-                                    chmod +x security-scans/sbom-generate.sh
-                                    ./security-scans/sbom-generate.sh \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-frontend:${BUILD_NUMBER} frontend
-                                """
-                            }
-                        }
+            steps {
+                script {
+                    echo 'Generating SBOM...'
+                    withCredentials(getAWSCredentials()) {
+                        parallel(
+                            backend: { runSecurityScan('sbom', 'backend') },
+                            frontend: { runSecurityScan('sbom', 'frontend') }
+                        )
                     }
                 }
             }
         }
         
         stage('Run Unit Tests') {
-            parallel {
-                stage('Backend Tests') {
-                    steps {
-                        script {
-                            echo 'Running backend unit tests...'
-                            withCredentials([
-                                string(credentialsId: 'node-version', variable: 'NODE_VERSION')
-                            ]) {
-                                dir('backend') {
-                                    sh """
-                                        docker run --rm -v \$(pwd):/app -w /app node:\${NODE_VERSION}-alpine sh -c 'npm ci && npm test'
-                                    """
-                                }
-                            }
-                        }
-                    }
-                }
-                stage('Frontend Tests') {
-                    steps {
-                        script {
-                            echo 'Running frontend unit tests...'
-                            withCredentials([
-                                string(credentialsId: 'node-version', variable: 'NODE_VERSION')
-                            ]) {
-                                dir('frontend') {
-                                    sh """
-                                        docker run --rm -v \$(pwd):/app -w /app node:\${NODE_VERSION}-alpine sh -c 'npm ci && CI=true npm test -- --passWithNoTests'
-                                    """
-                                }
-                            }
-                        }
+            steps {
+                script {
+                    echo 'Running unit tests...'
+                    withCredentials([string(credentialsId: 'node-version', variable: 'NODE_VERSION')]) {
+                        parallel(
+                            backend: { runTests('backend', 'unit') },
+                            frontend: { runTests('frontend', 'unit') }
+                        )
                     }
                 }
             }
         }
         
         stage('Code Quality') {
-            parallel {
-                stage('Backend Lint') {
-                    steps {
-                        script {
-                            echo 'Running backend linting...'
-                            withCredentials([
-                                string(credentialsId: 'node-version', variable: 'NODE_VERSION')
-                            ]) {
-                                dir('backend') {
-                                    sh """
-                                        docker run --rm -v \$(pwd):/app -w /app node:\${NODE_VERSION}-alpine sh -c 'npm ci && npm run lint'
-                                    """
-                                }
-                            }
-                        }
-                    }
-                }
-                stage('Frontend Lint') {
-                    steps {
-                        script {
-                            echo 'Running frontend linting...'
-                            withCredentials([
-                                string(credentialsId: 'node-version', variable: 'NODE_VERSION')
-                            ]) {
-                                dir('frontend') {
-                                    sh """
-                                        docker run --rm -v \$(pwd):/app -w /app node:\${NODE_VERSION}-alpine sh -c 'npm ci --legacy-peer-deps && npm run lint'
-                                    """
-                                }
-                            }
-                        }
-                    }
-                }
-                stage('Test Images') {
-                    steps {
-                        script {
-                            echo 'Testing Docker images...'
-                            withCredentials([
-                                string(credentialsId: 'aws-region', variable: 'AWS_REGION'),
-                                string(credentialsId: 'aws-account-id', variable: 'AWS_ACCOUNT_ID'),
-                                string(credentialsId: 'app-name', variable: 'APP_NAME')
-                            ]) {
+            steps {
+                script {
+                    echo 'Running code quality checks...'
+                    withCredentials(getAWSCredentials() + [string(credentialsId: 'node-version', variable: 'NODE_VERSION')]) {
+                        parallel(
+                            backendLint: { runTests('backend', 'lint') },
+                            frontendLint: { runTests('frontend', 'lint') },
+                            imageTest: {
                                 sh """
                                     docker run --rm \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-backend:${IMAGE_TAG} node --version
                                     docker run --rm \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-frontend:${IMAGE_TAG} nginx -v
                                 """
                             }
-                        }
+                        )
                     }
                 }
             }
@@ -307,10 +276,7 @@ pipeline {
             steps {
                 script {
                     echo 'Running integration tests...'
-                    withCredentials([
-                        string(credentialsId: 'aws-region', variable: 'AWS_REGION'),
-                        string(credentialsId: 'aws-account-id', variable: 'AWS_ACCOUNT_ID'),
-                        string(credentialsId: 'app-name', variable: 'APP_NAME'),
+                    withCredentials(getAWSCredentials() + [
                         string(credentialsId: 'app-port', variable: 'APP_PORT'),
                         string(credentialsId: 'integration-test-port', variable: 'INTEGRATION_TEST_PORT'),
                         string(credentialsId: 'health-check-timeout', variable: 'HEALTH_CHECK_TIMEOUT'),
@@ -322,7 +288,8 @@ pipeline {
                             cleanup() { docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true; }
                             trap cleanup EXIT
                             cleanup
-                            docker run -d --name "$CONTAINER_NAME" -p ${INTEGRATION_TEST_PORT}:${APP_PORT} "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${APP_NAME}-backend:${BUILD_NUMBER}"
+                            docker run -d --name "$CONTAINER_NAME" -p ${INTEGRATION_TEST_PORT}:${APP_PORT} \
+                                "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${APP_NAME}-backend:${BUILD_NUMBER}"
                             MAX_ITERATIONS=$((${HEALTH_CHECK_TIMEOUT} / ${HEALTH_CHECK_INTERVAL}))
                             for i in $(seq 1 $MAX_ITERATIONS); do
                                 if curl -fsS http://localhost:${INTEGRATION_TEST_PORT}/health >/dev/null 2>&1; then break; fi
@@ -338,47 +305,15 @@ pipeline {
         }
         
         stage('Push to ECR') {
-            parallel {
-                stage('Push Backend Images') {
-                    steps {
-                        script {
-                            echo 'Pushing backend images to ECR...'
-                            withCredentials([
-                                [$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"],
-                                string(credentialsId: 'aws-region', variable: 'AWS_REGION'),
-                                string(credentialsId: 'aws-account-id', variable: 'AWS_ACCOUNT_ID'),
-                                string(credentialsId: 'app-name', variable: 'APP_NAME')
-                            ]) {
-                                sh """
-                                    aws ecr get-login-password --region \${AWS_REGION} | docker login --username AWS --password-stdin \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com
-                                    docker push \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-backend:${IMAGE_TAG}
-                                    docker tag \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-backend:${IMAGE_TAG} \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-backend:latest
-                                    docker push \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-backend:latest
-                                """
-                            }
-                            echo "Backend images pushed!"
-                        }
-                    }
-                }
-                stage('Push Frontend Images') {
-                    steps {
-                        script {
-                            echo 'Pushing frontend images to ECR...'
-                            withCredentials([
-                                [$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"],
-                                string(credentialsId: 'aws-region', variable: 'AWS_REGION'),
-                                string(credentialsId: 'aws-account-id', variable: 'AWS_ACCOUNT_ID'),
-                                string(credentialsId: 'app-name', variable: 'APP_NAME')
-                            ]) {
-                                sh """
-                                    aws ecr get-login-password --region \${AWS_REGION} | docker login --username AWS --password-stdin \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com
-                                    docker push \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-frontend:${IMAGE_TAG}
-                                    docker tag \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-frontend:${IMAGE_TAG} \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-frontend:latest
-                                    docker push \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-frontend:latest
-                                """
-                            }
-                            echo "Frontend images pushed!"
-                        }
+            steps {
+                script {
+                    echo 'Pushing images to ECR...'
+                    withCredentials(getAWSCredentials()) {
+                        ecrLogin()
+                        parallel(
+                            backend: { pushDockerImage('backend', IMAGE_TAG) },
+                            frontend: { pushDockerImage('frontend', IMAGE_TAG) }
+                        )
                     }
                 }
             }
@@ -387,47 +322,17 @@ pipeline {
         stage('Deploy via CodeDeploy') {
             steps {
                 script {
-                    echo 'Deploying to ECS via CodeDeploy Blue-Green...'
-                    withCredentials([
-                        [$class: 'AmazonWebServicesCredentialsBinding', credentialsId: "${AWS_CREDENTIALS_ID}"],
-                        string(credentialsId: 'aws-region', variable: 'AWS_REGION'),
-                        string(credentialsId: 'aws-account-id', variable: 'AWS_ACCOUNT_ID'),
-                        string(credentialsId: 'app-name', variable: 'APP_NAME'),
+                    echo 'Deploying via CodeDeploy Blue-Green...'
+                    withCredentials(getAWSCredentials() + [
                         string(credentialsId: 'codedeploy-app-name', variable: 'CODEDEPLOY_APP'),
-                        string(credentialsId: 'codedeploy-deployment-group', variable: 'CODEDEPLOY_GROUP')
+                        string(credentialsId: 'codedeploy-deployment-group', variable: 'CODEDEPLOY_GROUP'),
+                        string(credentialsId: 'codedeploy-backend-deployment-group', variable: 'CODEDEPLOY_BACKEND_GROUP'),
+                        string(credentialsId: 'ecs-cluster-name', variable: 'ECS_CLUSTER')
                     ]) {
-                        sh """
-                            # Register new task definition
-                            sed 's/IMAGE_TAG/${IMAGE_TAG}/g' ecs-task-definition.json > ecs-task-definition-${IMAGE_TAG}.json
-                            TASK_ARN=\$(aws ecs register-task-definition \
-                                --cli-input-json file://ecs-task-definition-${IMAGE_TAG}.json \
-                                --region \${AWS_REGION} \
-                                --query 'taskDefinition.taskDefinitionArn' \
-                                --output text)
-                            echo "Task definition: \$TASK_ARN"
-                            
-                            # Create appspec
-                            cat > appspec.yaml <<EOF
-version: 0.0
-Resources:
-  - TargetService:
-      Type: AWS::ECS::Service
-      Properties:
-        TaskDefinition: "\$TASK_ARN"
-        LoadBalancerInfo:
-          ContainerName: "taskflow-backend"
-          ContainerPort: 5000
-EOF
-                            
-                            # Deploy via CodeDeploy
-                            aws deploy create-deployment \
-                                --application-name \${CODEDEPLOY_APP} \
-                                --deployment-group-name \${CODEDEPLOY_GROUP} \
-                                --revision revisionType=AppSpecContent,appSpecContent={content="\$(cat appspec.yaml)"} \
-                                --region \${AWS_REGION}
-                            
-                            echo "✅ CodeDeploy blue-green deployment initiated!"
-                        """
+                        parallel(
+                            frontend: { deployToECS('frontend', '80') },
+                            backend: { deployToECS('backend', '5000') }
+                        )
                     }
                 }
             }
@@ -444,7 +349,6 @@ EOF
                         string(credentialsId: 'ecs-service-frontend', variable: 'ECS_SERVICE_FRONTEND')
                     ]) {
                         sh """
-                            # Quick check - just verify services are running
                             echo "Checking ECS service status..."
                             aws ecs describe-services \
                                 --cluster \${ECS_CLUSTER} \
@@ -465,29 +369,17 @@ EOF
     post {
         always {
             script {
-                echo 'Archiving security reports and SBOM files...'
-                archiveArtifacts artifacts: 'trivy-*-report.json,sbom-*.json,gitleaks-report.json,snyk-*-report.json,ecs-task-definition-*-${BUILD_NUMBER}.json', allowEmptyArchive: true
+                echo 'Archiving artifacts and cleaning up...'
+                archiveArtifacts artifacts: 'trivy-*-report.json,sbom-*.json,gitleaks-report.json,snyk-*-report.json,ecs-task-definition-*-*.json', allowEmptyArchive: true
                 
-                echo 'Cleaning up...'
                 sh """
-                    # Remove test containers
                     docker rm -f test-backend-${BUILD_NUMBER} 2>/dev/null || true
-                    
-                    # Remove stopped containers
                     docker container prune -f
-                    
-                    # Remove dangling images
                     docker image prune -f
-                    
-                    # Clean workspace node_modules with sudo
                     sudo rm -rf backend/node_modules frontend/node_modules || true
-                    
-                    # Show disk usage
-                    echo "Disk usage:"
-                    df -h / | tail -1
+                    echo "Disk usage: \$(df -h / | tail -1)"
                 """
                 
-                // Calculate and display build duration
                 try {
                     def duration = (System.currentTimeMillis() - env.BUILD_START_TIME.toLong()) / 1000
                     echo "Total build duration: ${duration}s (${duration/60}m)"
@@ -498,39 +390,29 @@ EOF
         }
         success {
             script {
-                try {
-                    def duration = (System.currentTimeMillis() - env.BUILD_START_TIME.toLong()) / 1000
-                    echo '=================================='
-                    echo 'PIPELINE COMPLETED SUCCESSFULLY!'
-                    echo '=================================='
-                    echo "Duration: ${duration}s (${duration/60}m)"
-                    echo "Build: #${BUILD_NUMBER}"
-                    echo "Deployed via CodeDeploy Blue-Green"
-                    echo "Application URL: http://taskflow-alb-365219180.eu-west-1.elb.amazonaws.com"
-                } catch (Exception e) {
-                    echo '=================================='
-                    echo 'PIPELINE COMPLETED SUCCESSFULLY!'
-                    echo '=================================='
-                    echo "Build: #${BUILD_NUMBER}"
-                }
+                def duration = (System.currentTimeMillis() - env.BUILD_START_TIME.toLong()) / 1000
+                echo """
+==================================
+PIPELINE COMPLETED SUCCESSFULLY!
+==================================
+Duration: ${duration}s (${duration/60}m)
+Build: #${BUILD_NUMBER}
+Deployed via CodeDeploy Blue-Green
+Application URL: http://taskflow-alb-2078476769.eu-west-1.elb.amazonaws.com
+                """.trim()
             }
         }
         failure {
             script {
-                try {
-                    def duration = (System.currentTimeMillis() - env.BUILD_START_TIME.toLong()) / 1000
-                    echo '=================================='
-                    echo 'PIPELINE FAILED!'
-                    echo '=================================='
-                    echo "Duration: ${duration}s"
-                    echo "Build: #${BUILD_NUMBER}"
-                    echo "Check logs: ${BUILD_URL}console"
-                } catch (Exception e) {
-                    echo '=================================='
-                    echo 'PIPELINE FAILED!'
-                    echo '=================================='
-                    echo "Build: #${BUILD_NUMBER}"
-                }
+                def duration = (System.currentTimeMillis() - env.BUILD_START_TIME.toLong()) / 1000
+                echo """
+==================================
+PIPELINE FAILED!
+==================================
+Duration: ${duration}s
+Build: #${BUILD_NUMBER}
+Check logs: ${BUILD_URL}console
+                """.trim()
             }
         }
     }

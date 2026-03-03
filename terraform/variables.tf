@@ -60,5 +60,5 @@ variable "subnet_ids" {
 variable "aws_account_id" {
   description = "AWS Account ID"
   type        = string
-  default     = "010679547158"
+  default     = "697863031884"
 }

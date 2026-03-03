@@ -70,7 +70,12 @@ credentials:
               scope: GLOBAL
               id: "codedeploy-deployment-group"
               secret: "taskflow-blue-green"
-              description: "CodeDeploy Deployment Group"
+              description: "CodeDeploy Frontend Deployment Group"
+          - string:
+              scope: GLOBAL
+              id: "codedeploy-backend-deployment-group"
+              secret: "taskflow-backend-blue-green"
+              description: "CodeDeploy Backend Deployment Group"
           
           # Monitoring Configuration
           - string:

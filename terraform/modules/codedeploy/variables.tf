@@ -24,6 +24,11 @@ variable "ecs_cluster_name" {
 }
 
 variable "ecs_service_name" {
-  description = "ECS service name"
+  description = "ECS frontend service name"
+  type        = string
+}
+
+variable "ecs_backend_service_name" {
+  description = "ECS backend service name"
   type        = string
 }

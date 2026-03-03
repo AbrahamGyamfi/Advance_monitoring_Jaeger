@@ -41,11 +41,27 @@ resource "aws_security_group" "taskflow" {
     cidr_blocks = var.admin_cidr_blocks
   }
 
+  # Port 5000: backend API — internal (self) + admin access for CodeDeploy ALB listener
+  ingress {
+    from_port   = 5000
+    to_port     = 5000
+    protocol    = "tcp"
+    cidr_blocks = var.admin_cidr_blocks
+  }
+
   ingress {
     from_port = 5000
     to_port   = 5000
     protocol  = "tcp"
     self      = true
+  }
+
+  # Port 5001: backend CodeDeploy test listener (admin only)
+  ingress {
+    from_port   = 5001
+    to_port     = 5001
+    protocol    = "tcp"
+    cidr_blocks = var.admin_cidr_blocks
   }
 
   ingress {

@@ -2,8 +2,9 @@ output "jenkins_public_ip" {
   value = module.compute.jenkins_public_ip
 }
 
-output "app_public_ip" {
-  value = module.compute.app_public_ip
+# App runs on ECS Fargate - access via ALB
+output "app_url" {
+  value = "http://${module.codedeploy.alb_dns_name}"
 }
 
 output "monitoring_public_ip" {

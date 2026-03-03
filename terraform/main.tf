@@ -52,27 +52,31 @@ module "monitoring" {
   security_group_name  = module.networking.security_group_name
   iam_instance_profile = module.security.iam_instance_profile
   aws_region           = var.aws_region
-  app_public_ip        = module.compute.app_public_ip
-  app_private_ip       = module.compute.app_private_ip
+  app_public_ip        = ""  # Not used - app runs on ECS Fargate
+  app_private_ip       = ""  # Not used - app runs on ECS Fargate
   private_key_path     = var.private_key_path
 }
 
 module "ecs" {
   source = "./modules/ecs"
 
-  vpc_id            = var.vpc_id
-  subnet_ids        = var.subnet_ids
-  security_group_id = module.networking.security_group_id
-  target_group_arn  = module.codedeploy.blue_target_group_arn
+  vpc_id                   = var.vpc_id
+  subnet_ids               = var.subnet_ids
+  security_group_id        = module.networking.security_group_id
+  target_group_arn         = module.codedeploy.blue_target_group_arn
+  backend_target_group_arn = module.codedeploy.backend_blue_target_group_arn
+  monitoring_host          = module.monitoring.monitoring_private_ip
+  aws_account_id           = var.aws_account_id
 }
 
 module "codedeploy" {
   source = "./modules/codedeploy"
 
-  vpc_id             = var.vpc_id
-  subnet_ids         = var.subnet_ids
-  security_group_id  = module.networking.security_group_id
-  aws_account_id     = var.aws_account_id
-  ecs_cluster_name   = module.ecs.cluster_name
-  ecs_service_name   = module.ecs.frontend_service_name
+  vpc_id                   = var.vpc_id
+  subnet_ids               = var.subnet_ids
+  security_group_id        = module.networking.security_group_id
+  aws_account_id           = var.aws_account_id
+  ecs_cluster_name         = module.ecs.cluster_name
+  ecs_service_name         = module.ecs.frontend_service_name
+  ecs_backend_service_name = module.ecs.backend_service_name
 }
