@@ -125,6 +125,41 @@ def getAWSCredentials() {
     ]
 }
 
+def performHealthCheck(String albUrl, int maxRetries = 30, int intervalSec = 10) {
+    def endpoints = [
+        [name: 'Frontend', url: "${albUrl}/", expectedStatus: 200],
+        [name: 'Backend Health', url: "${albUrl}:5000/health", expectedStatus: 200],
+        [name: 'Backend API', url: "${albUrl}:5000/api/tasks", expectedStatus: 200]
+    ]
+    
+    endpoints.each { endpoint ->
+        echo "Checking ${endpoint.name} at ${endpoint.url}..."
+        def success = false
+        for (int i = 1; i <= maxRetries && !success; i++) {
+            try {
+                def response = sh(
+                    script: "curl -s -o /dev/null -w '%{http_code}' --connect-timeout 10 ${endpoint.url}",
+                    returnStdout: true
+                ).trim()
+                if (response == "${endpoint.expectedStatus}") {
+                    echo "✅ ${endpoint.name}: HTTP ${response}"
+                    success = true
+                } else {
+                    echo "⏳ ${endpoint.name}: HTTP ${response} (attempt ${i}/${maxRetries})"
+                    if (i < maxRetries) sleep(intervalSec)
+                }
+            } catch (Exception e) {
+                echo "⏳ ${endpoint.name}: Connection failed (attempt ${i}/${maxRetries})"
+                if (i < maxRetries) sleep(intervalSec)
+            }
+        }
+        if (!success) {
+            error "❌ ${endpoint.name} health check failed after ${maxRetries} attempts"
+        }
+    }
+    echo "✅ All health checks passed!"
+}
+
 // ============================================================================
 // PIPELINE DEFINITION
 // ============================================================================
@@ -341,7 +376,34 @@ pipeline {
                 }
             }
         }
-        
+
+        stage('Health Check') {
+            steps {
+                script {
+                    echo 'Verifying ECS services and ALB endpoints...'
+                    withCredentials([
+                        [$class: 'AmazonWebServicesCredentialsBinding', credentialsId: env.AWS_CREDENTIALS_ID],
+                        string(credentialsId: 'aws-region', variable: 'AWS_REGION'),
+                        string(credentialsId: 'ecs-cluster-name', variable: 'ECS_CLUSTER'),
+                        string(credentialsId: 'alb-dns-name', variable: 'ALB_DNS_NAME')
+                    ]) {
+                        // Check ECS service status
+                        sh '''
+                            echo "ECS Service Status:"
+                            aws ecs describe-services \
+                                --cluster ${ECS_CLUSTER} \
+                                --services taskflow-frontend taskflow-backend \
+                                --region ${AWS_REGION} \
+                                --query 'services[*].[serviceName,status,runningCount,desiredCount]' \
+                                --output table
+                        '''
+                        
+                        // Check ALB endpoints (with retries for blue-green cutover)
+                        performHealthCheck("http://${ALB_DNS_NAME}")
+                    }
+                }
+            }
+        }
 
     }
     

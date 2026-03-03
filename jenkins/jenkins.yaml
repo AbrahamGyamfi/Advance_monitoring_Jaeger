@@ -77,6 +77,13 @@ credentials:
               secret: "taskflow-backend-blue-green"
               description: "CodeDeploy Backend Deployment Group"
           
+          # ALB Configuration
+          - string:
+              scope: GLOBAL
+              id: "alb-dns-name"
+              secret: "taskflow-alb-2078476769.eu-west-1.elb.amazonaws.com"
+              description: "ALB DNS Name for health checks"
+          
           # Monitoring Configuration
           - string:
               scope: GLOBAL
