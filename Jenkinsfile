@@ -376,7 +376,7 @@ pipeline {
                     docker rm -f test-backend-${BUILD_NUMBER} 2>/dev/null || true
                     docker container prune -f
                     docker image prune -f
-                    sudo rm -rf backend/node_modules frontend/node_modules || true
+                    rm -rf backend/node_modules frontend/node_modules || true
                     echo "Disk usage: \$(df -h / | tail -1)"
                 """
                 
