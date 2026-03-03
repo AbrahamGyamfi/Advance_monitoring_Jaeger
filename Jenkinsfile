@@ -102,7 +102,7 @@ Resources:
 EOF
 
         # Create deployment using S3 revision
-        S3_BUCKET="taskflow-codedeploy-artifacts"
+        S3_BUCKET="taskflow-codedeploy-697863031884"
         S3_KEY="appspec-${component}-\${BUILD_NUMBER}.yaml"
         aws s3 cp ${appspecFile} s3://\${S3_BUCKET}/\${S3_KEY} --region \${AWS_REGION}
         
