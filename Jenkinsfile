@@ -334,7 +334,7 @@ pipeline {
                         string(credentialsId: 'ecs-cluster-name', variable: 'ECS_CLUSTER')
                     ]) {
                         parallel(
-                            frontend: { deployToECS('frontend', '80') },
+                            frontend: { deployToECS('frontend', '8080') },
                             backend: { deployToECS('backend', '5000') }
                         )
                     }
@@ -342,32 +342,7 @@ pipeline {
             }
         }
         
-        stage('Health Check') {
-            steps {
-                script {
-                    echo 'Verifying ECS deployment...'
-                    withCredentials([
-                        string(credentialsId: 'aws-region', variable: 'AWS_REGION'),
-                        string(credentialsId: 'ecs-cluster-name', variable: 'ECS_CLUSTER'),
-                        string(credentialsId: 'ecs-service-backend', variable: 'ECS_SERVICE_BACKEND'),
-                        string(credentialsId: 'ecs-service-frontend', variable: 'ECS_SERVICE_FRONTEND')
-                    ]) {
-                        sh """
-                            echo "Checking ECS service status..."
-                            aws ecs describe-services \
-                                --cluster \${ECS_CLUSTER} \
-                                --services \${ECS_SERVICE_BACKEND} \${ECS_SERVICE_FRONTEND} \
-                                --region \${AWS_REGION} \
-                                --query 'services[*].[serviceName,status,runningCount,desiredCount]' \
-                                --output table
-                            
-                            echo "ECS deployment initiated successfully!"
-                            echo "Note: Services will stabilize in background. Check CloudWatch Logs for details."
-                        """
-                    }
-                }
-            }
-        }
+
     }
     
     post {
