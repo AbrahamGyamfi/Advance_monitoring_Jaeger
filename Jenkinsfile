@@ -101,11 +101,15 @@ Resources:
             Subnets: ["\$SUBNET0", "\$SUBNET1"]
 EOF
 
-        # Create deployment using file-based revision
+        # Create deployment using S3 revision
+        S3_BUCKET="taskflow-codedeploy-artifacts"
+        S3_KEY="appspec-${component}-\${BUILD_NUMBER}.yaml"
+        aws s3 cp ${appspecFile} s3://\${S3_BUCKET}/\${S3_KEY} --region \${AWS_REGION}
+        
         DEPLOYMENT_ID=\$(aws deploy create-deployment \
             --application-name \${CODEDEPLOY_APP} \
             --deployment-group-name ${deploymentGroup} \
-            --revision '{"revisionType":"AppSpecContent","appSpecContent":{"content":"'\$(cat ${appspecFile} | sed 's/"/\\\"/g' | tr '\n' ' ' | sed 's/  */ /g')'"}}' \
+            --s3-location bucket=\${S3_BUCKET},key=\${S3_KEY},bundleType=YAML \
             --region \${AWS_REGION} \
             --query 'deploymentId' --output text)
         echo "✅ ${component.capitalize()} deployment: \$DEPLOYMENT_ID"
