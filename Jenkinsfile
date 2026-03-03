@@ -141,10 +141,11 @@ def getAWSCredentials() {
 }
 
 def performHealthCheck(String albUrl, int maxRetries = 30, int intervalSec = 10) {
+    // All checks use port 80 - nginx proxies /api/* and /health to backend internally
     def endpoints = [
         [name: 'Frontend', url: "${albUrl}/", expectedStatus: 200],
-        [name: 'Backend Health', url: "${albUrl}:5000/health", expectedStatus: 200],
-        [name: 'Backend API', url: "${albUrl}:5000/api/tasks", expectedStatus: 200]
+        [name: 'Backend Health (via proxy)', url: "${albUrl}/health", expectedStatus: 200],
+        [name: 'Backend API (via proxy)', url: "${albUrl}/api/tasks", expectedStatus: 200]
     ]
     
     endpoints.each { endpoint ->
