@@ -159,7 +159,7 @@ pipeline {
         }
         
         stage('Security Scans') {
-            parallel {
+            stages {
                 stage('Secret Scan') {
                     steps {
                         script {
