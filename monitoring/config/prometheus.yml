@@ -15,11 +15,11 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:9090']
 
-  - job_name: 'taskflow-backend'
+  # Scrape TaskFlow backend metrics via ALB (Fargate-compatible)
+  - job_name: 'taskflow-backend-fargate'
     static_configs:
-      - targets: ['${APP_PRIVATE_IP}:5000']
-    metrics_path: '/metrics'
-
-  - job_name: 'node-exporter'
-    static_configs:
-      - targets: ['${APP_PRIVATE_IP}:9100']
+      - targets: ['${ALB_DNS_NAME}']
+    metrics_path: '/api/metrics'
+    scheme: http
+    scrape_interval: 15s
+    scrape_timeout: 10s

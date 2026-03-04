@@ -12,7 +12,7 @@ resource "aws_lb" "taskflow" {
 
 resource "aws_lb_target_group" "blue" {
   name        = "taskflow-blue-tg"
-  port        = 8080
+  port        = 80
   protocol    = "HTTP"
   vpc_id      = var.vpc_id
   target_type = "ip"
@@ -29,7 +29,7 @@ resource "aws_lb_target_group" "blue" {
 
 resource "aws_lb_target_group" "green" {
   name        = "taskflow-green-tg"
-  port        = 8080
+  port        = 80
   protocol    = "HTTP"
   vpc_id      = var.vpc_id
   target_type = "ip"

@@ -52,8 +52,7 @@ module "monitoring" {
   security_group_name  = module.networking.security_group_name
   iam_instance_profile = module.security.iam_instance_profile
   aws_region           = var.aws_region
-  app_public_ip        = ""  # Not used - app runs on ECS Fargate
-  app_private_ip       = ""  # Not used - app runs on ECS Fargate
+  alb_dns_name         = module.codedeploy.alb_dns_name
   private_key_path     = var.private_key_path
 }
 

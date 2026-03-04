@@ -36,12 +36,19 @@ variable "cloudwatch_log_group" {
 }
 
 variable "app_public_ip" {
-  description = "Application server public IP"
+  description = "Application server public IP (deprecated - using Fargate)"
   type        = string
+  default     = ""
 }
 
 variable "app_private_ip" {
-  description = "Application server private IP"
+  description = "Application server private IP (deprecated - using Fargate)"
+  type        = string
+  default     = ""
+}
+
+variable "alb_dns_name" {
+  description = "ALB DNS name for Prometheus scraping (Fargate-compatible)"
   type        = string
 }
 

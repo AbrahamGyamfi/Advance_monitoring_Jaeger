@@ -28,3 +28,13 @@ datasources:
     access: proxy
     url: http://jaeger:16686
     editable: true
+
+  - name: CloudWatch
+    type: cloudwatch
+    uid: cloudwatch
+    access: proxy
+    editable: true
+    jsonData:
+      authType: default
+      defaultRegion: eu-west-1
+    # Uses EC2 instance IAM role credentials
