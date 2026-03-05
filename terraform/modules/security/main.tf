@@ -128,9 +128,9 @@ resource "aws_iam_role_policy_attachment" "ecr_read_only" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
-# CloudWatch read access for Grafana (Container Insights metrics)
-resource "aws_iam_role_policy" "cloudwatch_read" {
-  name = "cloudwatch-read-access"
+# CloudWatch Logs read access for ECS logs in Grafana
+resource "aws_iam_role_policy" "ecs_logs_read" {
+  name = "ecs-cloudwatch-logs-read"
   role = aws_iam_role.cloudwatch_logs.id
 
   policy = jsonencode({
@@ -139,38 +139,18 @@ resource "aws_iam_role_policy" "cloudwatch_read" {
       {
         Effect = "Allow"
         Action = [
-          "cloudwatch:DescribeAlarmsForMetric",
-          "cloudwatch:DescribeAlarmHistory",
-          "cloudwatch:DescribeAlarms",
-          "cloudwatch:ListMetrics",
-          "cloudwatch:GetMetricStatistics",
-          "cloudwatch:GetMetricData",
-          "cloudwatch:GetInsightRuleReport"
-        ]
-        Resource = "*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
           "logs:DescribeLogGroups",
-          "logs:GetLogGroupFields",
+          "logs:DescribeLogStreams",
+          "logs:GetLogEvents",
+          "logs:FilterLogEvents",
           "logs:StartQuery",
           "logs:StopQuery",
-          "logs:GetQueryResults",
-          "logs:GetLogEvents",
-          "logs:FilterLogEvents"
+          "logs:GetQueryResults"
         ]
-        Resource = "*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "ec2:DescribeTags",
-          "ec2:DescribeInstances",
-          "ec2:DescribeRegions",
-          "tag:GetResources"
+        Resource = [
+          "arn:aws:logs:*:${var.aws_account_id}:log-group:/ecs/taskflow-*",
+          "arn:aws:logs:*:${var.aws_account_id}:log-group:/ecs/taskflow-*:*"
         ]
-        Resource = "*"
       }
     ]
   })

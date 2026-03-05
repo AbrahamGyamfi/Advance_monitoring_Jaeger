@@ -21,6 +21,7 @@ def buildDockerImage(String component, String imageTag) {
                 --build-arg BUILD_DATE=\$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
                 --build-arg VCS_REF=\${GIT_COMMIT} \
                 --build-arg BUILD_NUMBER=\${BUILD_NUMBER} \
+                --network=host \
                 -t \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-${component}:${imageTag} .
         """
     }
@@ -76,13 +77,24 @@ def deployToECS(String component, String containerPort) {
             --query 'deployments[0]' --output text 2>/dev/null || echo "None")
         
         if [ "\$EXISTING_DEPLOYMENT" != "None" ] && [ -n "\$EXISTING_DEPLOYMENT" ]; then
-            echo "⚠️ Stopping existing deployment: \$EXISTING_DEPLOYMENT"
+            echo "WARNING: Stopping existing deployment: \$EXISTING_DEPLOYMENT"
             aws deploy stop-deployment --deployment-id \$EXISTING_DEPLOYMENT --region \${AWS_REGION} --auto-rollback-enabled || true
             sleep 5
         fi
 
-        # Register task definition
-        sed 's/IMAGE_TAG/${IMAGE_TAG}/g' ${taskDefFile} > ${taskDefFile.replace('.json', '')}-${IMAGE_TAG}.json
+        # Resolve monitoring host IP from Terraform outputs or EC2 tag
+        MONITORING_HOST=\$(aws ec2 describe-instances \
+            --region \${AWS_REGION} \
+            --filters "Name=tag:Name,Values=taskflow-monitoring" "Name=instance-state-name,Values=running" \
+            --query 'Reservations[0].Instances[0].PrivateIpAddress' --output text)
+        if [ -z "\$MONITORING_HOST" ] || [ "\$MONITORING_HOST" = "None" ]; then
+            echo "WARNING: Monitoring instance not found — using fallback"
+            MONITORING_HOST="127.0.0.1"
+        fi
+        echo "Monitoring host IP: \$MONITORING_HOST"
+
+        # Register task definition — inject IMAGE_TAG and MONITORING_HOST
+        sed -e 's/IMAGE_TAG/${IMAGE_TAG}/g' -e "s/MONITORING_HOST/\$MONITORING_HOST/g" ${taskDefFile} > ${taskDefFile.replace('.json', '')}-${IMAGE_TAG}.json
         TASK_ARN=\$(aws ecs register-task-definition \
             --cli-input-json file://${taskDefFile.replace('.json', '')}-${IMAGE_TAG}.json \
             --region \${AWS_REGION} \
@@ -127,7 +139,10 @@ EOF
             --s3-location bucket=\${S3_BUCKET},key=\${S3_KEY},bundleType=YAML \
             --region \${AWS_REGION} \
             --query 'deploymentId' --output text)
-        echo "✅ ${component.capitalize()} deployment: \$DEPLOYMENT_ID"
+        echo "SUCCESS: ${component.capitalize()} deployment: \$DEPLOYMENT_ID"
+
+        # Persist deployment ID so Wait stage can track it
+        echo "\$DEPLOYMENT_ID" > deployment-id-${component}.txt
     """
 }
 
@@ -158,22 +173,22 @@ def performHealthCheck(String albUrl, int maxRetries = 30, int intervalSec = 10)
                     returnStdout: true
                 ).trim()
                 if (response == "${endpoint.expectedStatus}") {
-                    echo "✅ ${endpoint.name}: HTTP ${response}"
+                    echo "SUCCESS: ${endpoint.name}: HTTP ${response}"
                     success = true
                 } else {
-                    echo "⏳ ${endpoint.name}: HTTP ${response} (attempt ${i}/${maxRetries})"
+                    echo "WAITING: ${endpoint.name}: HTTP ${response} (attempt ${i}/${maxRetries})"
                     if (i < maxRetries) sleep(intervalSec)
                 }
             } catch (Exception e) {
-                echo "⏳ ${endpoint.name}: Connection failed (attempt ${i}/${maxRetries})"
+                echo "WAITING: ${endpoint.name}: Connection failed (attempt ${i}/${maxRetries})"
                 if (i < maxRetries) sleep(intervalSec)
             }
         }
         if (!success) {
-            error "❌ ${endpoint.name} health check failed after ${maxRetries} attempts"
+            error "FAILED: ${endpoint.name} health check failed after ${maxRetries} attempts"
         }
     }
-    echo "✅ All health checks passed!"
+    echo "SUCCESS: All health checks passed!"
 }
 
 // ============================================================================
@@ -250,6 +265,34 @@ pipeline {
             }
         }
         
+        stage('Code Quality') {
+            steps {
+                script {
+                    echo 'Running code quality checks...'
+                    withCredentials([string(credentialsId: 'node-version', variable: 'NODE_VERSION')]) {
+                        parallel(
+                            backendLint: { runTests('backend', 'lint') },
+                            frontendLint: { runTests('frontend', 'lint') }
+                        )
+                    }
+                }
+            }
+        }
+        
+        stage('Run Unit Tests') {
+            steps {
+                script {
+                    echo 'Running unit tests...'
+                    withCredentials([string(credentialsId: 'node-version', variable: 'NODE_VERSION')]) {
+                        parallel(
+                            backend: { runTests('backend', 'unit') },
+                            frontend: { runTests('frontend', 'unit') }
+                        )
+                    }
+                }
+            }
+        }
+        
         stage('Build Docker Images') {
             steps {
                 script {
@@ -293,35 +336,15 @@ pipeline {
             }
         }
         
-        stage('Run Unit Tests') {
+        stage('Image Verification') {
             steps {
                 script {
-                    echo 'Running unit tests...'
-                    withCredentials([string(credentialsId: 'node-version', variable: 'NODE_VERSION')]) {
-                        parallel(
-                            backend: { runTests('backend', 'unit') },
-                            frontend: { runTests('frontend', 'unit') }
-                        )
-                    }
-                }
-            }
-        }
-        
-        stage('Code Quality') {
-            steps {
-                script {
-                    echo 'Running code quality checks...'
-                    withCredentials(getAWSCredentials() + [string(credentialsId: 'node-version', variable: 'NODE_VERSION')]) {
-                        parallel(
-                            backendLint: { runTests('backend', 'lint') },
-                            frontendLint: { runTests('frontend', 'lint') },
-                            imageTest: {
-                                sh """
-                                    docker run --rm \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-backend:${IMAGE_TAG} node --version
-                                    docker run --rm \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-frontend:${IMAGE_TAG} nginx -v
-                                """
-                            }
-                        )
+                    echo 'Verifying built images...'
+                    withCredentials(getAWSCredentials()) {
+                        sh """
+                            docker run --rm \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-backend:${IMAGE_TAG} node --version
+                            docker run --rm \${AWS_ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/\${APP_NAME}-frontend:${IMAGE_TAG} nginx -v
+                        """
                     }
                 }
             }
@@ -392,30 +415,88 @@ pipeline {
                 }
             }
         }
+        
+        stage('Wait for Deployment') {
+            steps {
+                script {
+                    echo 'Waiting for CodeDeploy deployments to complete...'
+                    withCredentials(getAWSCredentials() + [
+                        string(credentialsId: 'ecs-cluster-name', variable: 'ECS_CLUSTER')
+                    ]) {
+                        timeout(time: 15, unit: 'MINUTES') {
+                            sh '''
+                                set -euo pipefail
 
+                                for component in frontend backend; do
+                                    DEPLOY_ID=$(cat deployment-id-${component}.txt 2>/dev/null || echo "")
+                                    if [ -z "$DEPLOY_ID" ]; then
+                                        echo "ERROR: No deployment ID found for $component"
+                                        exit 1
+                                    fi
+
+                                    echo "Waiting for $component deployment: $DEPLOY_ID"
+                                    while true; do
+                                        DEP_STATUS=$(aws deploy get-deployment \
+                                            --deployment-id "$DEPLOY_ID" \
+                                            --region ${AWS_REGION} \
+                                            --query 'deploymentInfo.status' --output text)
+
+                                        echo "  $component ($DEPLOY_ID): $DEP_STATUS"
+
+                                        case $DEP_STATUS in
+                                            Succeeded)
+                                                echo "SUCCESS: $component deployment completed"
+                                                break
+                                                ;;
+                                            Failed|Stopped)
+                                                echo "FAILED: $component deployment $DEP_STATUS"
+                                                aws deploy get-deployment \
+                                                    --deployment-id "$DEPLOY_ID" \
+                                                    --region ${AWS_REGION} \
+                                                    --query 'deploymentInfo.errorInformation' --output json || true
+                                                exit 1
+                                                ;;
+                                            *)
+                                                sleep 10
+                                                ;;
+                                        esac
+                                    done
+                                done
+
+                                echo ""
+                                echo "=== Final ECS Service Status ==="
+                                aws ecs describe-services \
+                                    --cluster ${ECS_CLUSTER} \
+                                    --services taskflow-frontend taskflow-backend \
+                                    --region ${AWS_REGION} \
+                                    --query 'services[*].[serviceName,status,runningCount,desiredCount]' \
+                                    --output table
+
+                                echo "All deployments completed successfully"
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+        
         stage('Health Check') {
             steps {
                 script {
-                    echo 'Verifying ECS services and ALB endpoints...'
-                    withCredentials([
-                        [$class: 'AmazonWebServicesCredentialsBinding', credentialsId: env.AWS_CREDENTIALS_ID],
-                        string(credentialsId: 'aws-region', variable: 'AWS_REGION'),
-                        string(credentialsId: 'ecs-cluster-name', variable: 'ECS_CLUSTER'),
-                        string(credentialsId: 'alb-dns-name', variable: 'ALB_DNS_NAME')
-                    ]) {
-                        // Check ECS service status
-                        sh '''
-                            echo "ECS Service Status:"
-                            aws ecs describe-services \
-                                --cluster ${ECS_CLUSTER} \
-                                --services taskflow-frontend taskflow-backend \
-                                --region ${AWS_REGION} \
-                                --query 'services[*].[serviceName,status,runningCount,desiredCount]' \
-                                --output table
-                        '''
-                        
-                        // Check ALB endpoints (with retries for blue-green cutover)
-                        performHealthCheck("http://${ALB_DNS_NAME}")
+                    echo 'Verifying ALB endpoints...'
+                    withCredentials(getAWSCredentials()) {
+                        def albDns = sh(
+                            script: '''
+                                aws elbv2 describe-load-balancers \
+                                    --names taskflow-alb \
+                                    --region ${AWS_REGION} \
+                                    --query 'LoadBalancers[0].DNSName' \
+                                    --output text
+                            ''',
+                            returnStdout: true
+                        ).trim()
+                        echo "ALB DNS: ${albDns}"
+                        performHealthCheck("http://${albDns}", 6, 5)
                     }
                 }
             }

@@ -29,12 +29,11 @@ datasources:
     url: http://jaeger:16686
     editable: true
 
-  - name: CloudWatch
-    type: cloudwatch
-    uid: cloudwatch
+  - name: Alertmanager
+    type: alertmanager
+    uid: alertmanager
     access: proxy
+    url: http://alertmanager:9093
     editable: true
     jsonData:
-      authType: default
-      defaultRegion: eu-west-1
-    # Uses EC2 instance IAM role credentials
+      implementation: prometheus
